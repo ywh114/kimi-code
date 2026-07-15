@@ -511,6 +511,11 @@ export class SessionEventHandler {
   private handleToolCall(event: ToolCallStartedEvent): void {
     const { streamingUI } = this.host;
     streamingUI.flushNow();
+    if (streamingUI.hasThinkingDraft()) {
+      // A real tool call starting means the reasoning phase for this turn has
+      // ended; finalize the thinking block before the tool card is rendered.
+      streamingUI.flushThinkingToTranscript('tool');
+    }
     const { turnId, step } = streamingUI.getTurnContext();
     const toolCall: ToolCallBlockData = {
       id: event.toolCallId,

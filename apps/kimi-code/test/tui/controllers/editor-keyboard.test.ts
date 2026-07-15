@@ -35,7 +35,8 @@ function createHarness(options: { streamingPhase?: string; isCompacting?: boolea
       ui: { requestRender: vi.fn() },
     },
     session,
-    btwPanelController: { closeOrCancel: vi.fn(() => false) },
+    btwPanelController: { closeOrCancel: vi.fn(() => false), cancelRunning: vi.fn(() => false), scroll: vi.fn(() => false) },
+    shellEvalPanelController: { closeOrCancel: vi.fn(() => false), cancelRunning: vi.fn(() => false), scroll: vi.fn(() => false) },
     openUndoSelector,
     cancelRunningShellCommand,
   } as unknown as EditorKeyboardHost;
@@ -108,7 +109,7 @@ describe('EditorKeyboardController double-Esc undo', () => {
     expect(openUndoSelector).not.toHaveBeenCalled();
   });
 
-  it('does not trigger undo while streaming; Esc cancels the stream instead', () => {
+  it('does not trigger undo or cancel while streaming; Esc is ignored', () => {
     const { editor, host, openUndoSelector, cancelRunningShellCommand } = createHarness({
       streamingPhase: 'waiting',
     });
@@ -117,9 +118,9 @@ describe('EditorKeyboardController double-Esc undo', () => {
     pressEscape(editor);
 
     expect(openUndoSelector).not.toHaveBeenCalled();
-    expect(cancelRunningShellCommand).toHaveBeenCalled();
+    expect(cancelRunningShellCommand).not.toHaveBeenCalled();
     const session = host.session as unknown as { cancel: ReturnType<typeof vi.fn> };
-    expect(session.cancel).toHaveBeenCalled();
+    expect(session.cancel).not.toHaveBeenCalled();
   });
 });
 

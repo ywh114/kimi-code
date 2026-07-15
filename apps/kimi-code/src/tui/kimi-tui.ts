@@ -15,6 +15,8 @@ import type {
 import type { MigrationPlan } from '@moonshot-ai/migration-legacy';
 import {
   deleteAllKittyImages,
+  Key,
+  matchesKey,
   type Component,
   type Focusable,
   getCapabilities,
@@ -50,7 +52,6 @@ import { DeviceCodeBoxComponent } from './components/chrome/device-code-box';
 import { GutterContainer } from './components/chrome/gutter-container';
 import { MoonLoader, type SpinnerStyle } from './components/chrome/moon-loader';
 import { WelcomeComponent } from './components/chrome/welcome';
-import { pickRandomWorkingTip } from './components/chrome/working-tips';
 import {
   ApprovalPanelComponent,
   type ApprovalPanelResponse,
@@ -100,6 +101,7 @@ import { MAX_TERMINAL_TITLE_LENGTH } from './constant/terminal';
 import { AuthFlowController } from './controllers/auth-flow';
 import { BtwPanelController } from './controllers/btw-panel';
 import { ClipboardImageHintController } from './controllers/clipboard-image-hint';
+import { ShellEvalPanelController } from './controllers/shell-eval-panel';
 import { EditorKeyboardController } from './controllers/editor-keyboard';
 import { SessionEventHandler } from './controllers/session-event-handler';
 import { SessionReplayRenderer } from './controllers/session-replay';
@@ -179,13 +181,6 @@ export interface KimiTUIStartupInput {
 }
 
 type EffectiveActivityPaneMode = ActivityPaneMode | 'idle' | 'session';
-type LoadingTipKind = 'moon' | 'composing';
-
-function loadingTipKind(mode: EffectiveActivityPaneMode): LoadingTipKind | undefined {
-  if (mode === 'waiting' || mode === 'tool') return 'moon';
-  if (mode === 'composing') return 'composing';
-  return undefined;
-}
 
 function sameStringArrays(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((value, index) => value === b[index]);
@@ -210,6 +205,8 @@ function createInitialAppState(input: KimiTUIStartupInput): AppState {
     planMode: input.cliOptions.plan,
     inputMode: 'prompt',
     swarmMode: false,
+    toolOutputExpanded: false,
+    thinkingExpandedLocked: false,
     thinkingEffort: 'off',
     contextUsage: 0,
     contextTokens: 0,
@@ -310,13 +307,12 @@ export class KimiTUI {
   private clipboardImageHintController: ClipboardImageHintController | undefined;
   private uninstallRainbowDance: () => void;
   private signalCleanupHandlers: Array<() => void> = [];
+  private suspendInputDisposer: (() => void) | undefined;
   private isShuttingDown = false;
   private readonly migrationPlan: MigrationPlan | null;
   private readonly migrateOnly: boolean;
   private startupNotice: string | undefined;
   private lastActivityMode: string | undefined;
-  private currentLoadingTip: { kind: LoadingTipKind; tip: string | undefined } | undefined =
-    undefined;
   private lastHistoryContent: string | undefined;
   // Live `!` shell output entries, keyed by commandId so concurrent commands
   // each update their own card and stale events are dropped. Mutated in place
@@ -329,6 +325,7 @@ export class KimiTUI {
   readonly streamingUI: StreamingUIController;
   readonly authFlow: AuthFlowController;
   readonly btwPanelController: BtwPanelController;
+  readonly shellEvalPanelController: ShellEvalPanelController;
   readonly sessionEventHandler: SessionEventHandler;
   readonly sessionReplay: SessionReplayRenderer;
   readonly tasksBrowserController: TasksBrowserController;
@@ -402,6 +399,7 @@ export class KimiTUI {
     this.streamingUI = new StreamingUIController(this);
     this.authFlow = new AuthFlowController(this);
     this.btwPanelController = new BtwPanelController(this);
+    this.shellEvalPanelController = new ShellEvalPanelController(this);
     this.sessionEventHandler = new SessionEventHandler(this);
     this.sessionReplay = new SessionReplayRenderer(this);
     this.tasksBrowserController = new TasksBrowserController(this);
@@ -516,6 +514,7 @@ export class KimiTUI {
       if (this.migrationPlan !== null) {
         // Migration needs the event loop running first (pi-tui component).
         this.startEventLoop();
+        this.installSuspendInputListener();
         try {
           const migrationResult = await this.runMigrationScreen(this.migrationPlan);
           if (this.migrateOnly) {
@@ -538,6 +537,7 @@ export class KimiTUI {
 
       const shouldReplayHistory = await this.initMainTui();
       this.startEventLoop();
+      this.installSuspendInputListener();
       try {
         this.startBackgroundFdAutocomplete();
         await this.finishStartup(shouldReplayHistory);
@@ -814,6 +814,7 @@ export class KimiTUI {
   async stop(exitCode?: number): Promise<void> {
     if (this.isShuttingDown) return;
     this.isShuttingDown = true;
+    this.suspendInputDisposer?.();
     this.unregisterSignalHandlers();
     this.aborted = true;
     this.streamingUI.discardPending();
@@ -822,6 +823,7 @@ export class KimiTUI {
     // stop() returns (or leak when stop() runs without process.exit).
     this.tasksBrowserController.close();
     this.btwPanelController.clear();
+    this.shellEvalPanelController.clear();
     this.stopActivitySpinner();
     this.streamingUI.disposeActiveCompactionBlock();
     this.streamingUI.resetToolUi();
@@ -891,6 +893,31 @@ export class KimiTUI {
       });
     }
 
+    if (process.platform !== 'win32') {
+      const suspendHandler = (): void => {
+        if (this.isShuttingDown) return;
+        this.disposeTerminalTracking();
+        this.state.ui.stop();
+        // Raise SIGSTOP (cannot be caught) so the process actually suspends.
+        process.kill(process.pid, 'SIGSTOP');
+      };
+      process.prependListener('SIGTSTP', suspendHandler);
+      this.signalCleanupHandlers.push(() => {
+        process.off('SIGTSTP', suspendHandler);
+      });
+
+      const continueHandler = (): void => {
+        if (this.isShuttingDown) return;
+        this.startEventLoop();
+        this.state.ui.setFocus(this.state.editor);
+        this.state.ui.requestRender(true);
+      };
+      process.prependListener('SIGCONT', continueHandler);
+      this.signalCleanupHandlers.push(() => {
+        process.off('SIGCONT', continueHandler);
+      });
+    }
+
     const terminalErrorHandler = (error: Error): void => {
       if (isDeadTerminalError(error)) {
         this.emergencyTerminalExit();
@@ -903,6 +930,16 @@ export class KimiTUI {
     });
     this.signalCleanupHandlers.push(() => {
       process.stderr.off('error', terminalErrorHandler);
+    });
+  }
+
+  private installSuspendInputListener(): void {
+    this.suspendInputDisposer = this.state.ui.addInputListener((data) => {
+      if (matchesKey(data, Key.ctrl('z'))) {
+        process.kill(process.pid, 'SIGTSTP');
+        return { consume: true };
+      }
+      return undefined;
     });
   }
 
@@ -939,6 +976,7 @@ export class KimiTUI {
     ui.addChild(this.state.todoPanelContainer);
     ui.addChild(this.state.queueContainer);
     ui.addChild(this.state.btwPanelContainer);
+    ui.addChild(this.state.shellEvalPanelContainer);
     ui.addChild(this.state.editorContainer);
     // Footer is mounted later (mountFooter), not here.
   }
@@ -969,8 +1007,8 @@ export class KimiTUI {
 
   handleUserInput(text: string): void {
     const wasBashMode = this.state.appState.inputMode === 'bash';
-    if (wasBashMode) {
-      // A submit always exits bash mode (the `!` is consumed by this command).
+    if (wasBashMode && !this.state.editor.isBashModeSticky()) {
+      // `!`-prefixed bash commands are one-off; Ctrl+X bash mode is sticky.
       this.state.editor.inputMode = 'prompt';
       this.handleInputModeChange('prompt');
     }
@@ -982,9 +1020,26 @@ export class KimiTUI {
     // Shell commands are stored with a leading `!` so ↑ recall can tell them
     // apart from prompts and restore bash mode (see CustomEditor's mode-aware
     // history navigation). The `!` is stripped again when the entry is recalled.
-    const historyText = wasBashMode ? `!${text}` : text;
+    const isShellEval = this.state.editor.shellEvalPrefix;
+    const historyText = wasBashMode
+      ? isShellEval
+        ? `!!${text}`
+        : `!${text}`
+      : text;
     void this.persistInputHistory(historyText);
+    this.state.editor.shellEvalPrefix = false;
     if (wasBashMode) {
+      // A second `!` in bash mode (or recalled `!!` entry) means the user wants
+      // a side-agent shell execution. Run it in the dedicated SHELL panel so it
+      // runs concurrently instead of queueing behind the foreground turn.
+      if (isShellEval || text.startsWith('!')) {
+        const command = isShellEval ? text.trim() : text.slice(1).trim();
+        if (command.length > 0) {
+          void this.shellEvalPanelController.run(command);
+        }
+        return;
+      }
+
       // Only one foreground action at a time: queue the shell command while
       // another shell command is running or an agent turn is in progress.
       if (this.state.appState.streamingPhase !== 'idle') {
@@ -1051,6 +1106,7 @@ export class KimiTUI {
   }
 
   handleShellOutput(event: { commandId: string; update: { kind: string; text?: string } }): void {
+    if (this.shellEvalPanelController.handleOutput(event.commandId, event.update)) return;
     const stream = this.shellOutputStreams.get(event.commandId);
     if (stream === undefined) return;
     const text = event.update.text ?? '';
@@ -1059,6 +1115,7 @@ export class KimiTUI {
   }
 
   handleShellStarted(event: { commandId: string; taskId: string }): void {
+    if (this.shellEvalPanelController.handleStarted(event.commandId)) return;
     const stream = this.shellOutputStreams.get(event.commandId);
     if (stream === undefined) return;
     stream.taskId = event.taskId;
@@ -1652,6 +1709,7 @@ export class KimiTUI {
     this.sessionEventHandler.resetRuntimeState();
     this.tasksBrowserController.close();
     this.btwPanelController.clear();
+    this.shellEvalPanelController.clear();
     this.state.footer.setBackgroundCounts({ bashTasks: 0, agentTasks: 0 });
     this.streamingUI.setTodoList([]);
     this.streamingUI.setTurnId(undefined);
@@ -1985,6 +2043,7 @@ export class KimiTUI {
     this.disposeTranscriptChildren();
     this.state.transcriptContainer.clear();
     this.btwPanelController.clear();
+    this.shellEvalPanelController.clear();
     this.clearTerminalInlineImages();
     this.state.todoPanel.clear();
     this.state.todoPanelContainer.clear();
@@ -2281,23 +2340,6 @@ export class KimiTUI {
 
   updateActivityPane(): void {
     const effectiveMode = this.resolveActivityPaneMode();
-    const tipKind = loadingTipKind(effectiveMode);
-    // Pick a fresh loading tip when the loading kind changes. The same kind
-    // covers waiting/tool (both moon spinners) and any intermediate thinking
-    // phase, so a continuous burst of tool calls does not flip tips. Clear the
-    // cache only when there is no loading UI at all.
-    if (effectiveMode === 'idle' || effectiveMode === 'session' || effectiveMode === 'hidden') {
-      this.currentLoadingTip = undefined;
-    } else if (
-      tipKind !== undefined &&
-      (this.currentLoadingTip === undefined || this.currentLoadingTip.kind !== tipKind)
-    ) {
-      const previousTip = this.currentLoadingTip?.tip;
-      this.currentLoadingTip = {
-        kind: tipKind,
-        tip: pickRandomWorkingTip(previousTip)?.text,
-      };
-    }
     this.syncTerminalProgress(this.shouldShowTerminalProgress(effectiveMode));
     const placeSpinnerInAgentSwarm = this.shouldPlaceActivitySpinnerInAgentSwarm(effectiveMode);
     const activityModeKey = `${effectiveMode}:${placeSpinnerInAgentSwarm ? 'swarm' : 'pane'}`;
@@ -2329,7 +2371,6 @@ export class KimiTUI {
           new ActivityPaneComponent({
             mode: 'waiting',
             spinner,
-            tip: this.currentLoadingTip?.tip,
           }),
         );
         break;
@@ -2348,7 +2389,6 @@ export class KimiTUI {
           new ActivityPaneComponent({
             mode: 'composing',
             spinner,
-            tip: this.currentLoadingTip?.tip,
           }),
         );
         break;
@@ -2361,7 +2401,6 @@ export class KimiTUI {
           new ActivityPaneComponent({
             mode: 'tool',
             spinner,
-            tip: this.currentLoadingTip?.tip,
           }),
         );
         break;
@@ -2440,12 +2479,18 @@ export class KimiTUI {
       if (!isExpandable(child)) continue;
       child.setExpanded(this.state.toolOutputExpanded && i >= expandCutoff);
     }
+    this.setAppState({ toolOutputExpanded: this.state.toolOutputExpanded });
     // Expanding/collapsing shifts content above the viewport; the clamped
     // differential render would paint a second copy below the stale one in
     // scrollback. This is a deliberate user action (like /clear), so do a
     // destructive full render: scrollback holds exactly one copy and the
     // expanded output can be read by scrolling up.
     this.state.ui.requestRender(true);
+  }
+
+  toggleThinkingExpansion(): void {
+    this.streamingUI.toggleThinkingExpanded();
+    this.setAppState({ thinkingExpandedLocked: this.streamingUI.isThinkingExpandedLocked() });
   }
 
   toggleTodoPanelExpansion(): void {

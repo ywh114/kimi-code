@@ -11,14 +11,13 @@ function strip(text: string): string {
 const longThinking = ['line1', 'line2', 'line3', 'line4', 'line5', 'line6', 'line7'].join('\n');
 
 describe('ThinkingComponent', () => {
-  it('shows the live spinner header before thinking content', () => {
+  it('shows a static bullet for expanded live thinking', () => {
     const component = new ThinkingComponent('working it out', true, 'live');
     const out = strip(component.render(80).join('\n'));
 
-    expect(out).toContain('⠋ thinking...');
-    expect(out).not.toContain('  ⠋ thinking...');
-    expect(out).not.toContain(`${STATUS_BULLET}⠋`);
-    expect(out).toContain('  working it out');
+    // Short content auto-expands; use a static bullet (no braille spinner).
+    expect(out).toContain(`${STATUS_BULLET}working it out`);
+    expect(out).not.toContain('thinking...');
   });
 
   it('keeps live thinking height-limited to the tail', () => {
@@ -33,18 +32,18 @@ describe('ThinkingComponent', () => {
     expect(out).not.toContain('ctrl+o to expand');
   });
 
-  it('animates the live spinner and stops on finalize', () => {
+  it('animates the live spinner only while collapsed', () => {
     vi.useFakeTimers();
     const requestRender = vi.fn();
-    const component = new ThinkingComponent('step', true, 'live', {
+    const component = new ThinkingComponent(longThinking, true, 'live', {
       requestRender,
     } as unknown as TUI);
 
-    expect(strip(component.render(80).join('\n'))).toContain('⠋ thinking...');
+    expect(strip(component.render(80).join('\n'))).toContain('| thinking...');
 
-    vi.advanceTimersByTime(80);
+    vi.advanceTimersByTime(120);
     expect(requestRender).toHaveBeenCalled();
-    expect(strip(component.render(80).join('\n'))).toContain('⠙ thinking...');
+    expect(strip(component.render(80).join('\n'))).toContain('/ thinking...');
 
     component.finalize();
     requestRender.mockClear();
@@ -53,7 +52,23 @@ describe('ThinkingComponent', () => {
     vi.useRealTimers();
   });
 
-  it('finalizes in place into a collapsed preview', () => {
+  it('does not animate the spinner for expanded live thinking', () => {
+    vi.useFakeTimers();
+    const requestRender = vi.fn();
+    const component = new ThinkingComponent('working it out', true, 'live', {
+      requestRender,
+    } as unknown as TUI);
+
+    // Short content auto-expands.
+    expect(strip(component.render(80).join('\n'))).not.toContain('thinking...');
+
+    requestRender.mockClear();
+    vi.advanceTimersByTime(200);
+    expect(requestRender).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('finalizes in place into an always-expanded view', () => {
     const component = new ThinkingComponent(longThinking, true, 'live');
 
     component.finalize();
@@ -61,32 +76,27 @@ describe('ThinkingComponent', () => {
     const out = strip(component.render(80).join('\n'));
     expect(out).toContain('line1');
     expect(out).toContain('line2');
-    expect(out).not.toContain('line3');
-    expect(out).not.toContain('line4');
-    expect(out).toContain('... (5 more lines, ctrl+o to expand)');
+    expect(out).toContain('line7');
+    expect(out).not.toContain('ctrl+e to expand');
   });
 
-  it('expands and collapses after finalization', () => {
-    const component = new ThinkingComponent(longThinking, true, 'live');
-    component.finalize();
-
-    component.setExpanded(true);
-    const expanded = strip(component.render(80).join('\n'));
-    expect(expanded).toContain('line7');
-    expect(expanded).not.toContain('ctrl+o to expand');
-
-    component.setExpanded(false);
-    const collapsed = strip(component.render(80).join('\n'));
-    expect(collapsed).not.toContain('line7');
-    expect(collapsed).toContain('ctrl+o to expand');
-  });
-
-  it('keeps the finalized truncation footer within the requested render width', () => {
+  it('keeps finalized thinking within the requested render width', () => {
     const component = new ThinkingComponent(longThinking, true, 'live');
     component.finalize();
 
     for (const line of component.render(37)) {
       expect(visibleWidth(line)).toBeLessThanOrEqual(37);
     }
+  });
+
+  it('has the same rendered height for expanded live and finalized thinking', () => {
+    const component = new ThinkingComponent(longThinking, true, 'live');
+    component.setExpanded(true);
+    const liveHeight = component.render(80).length;
+
+    component.finalize();
+    const finalizedHeight = component.render(80).length;
+
+    expect(finalizedHeight).toBe(liveHeight);
   });
 });

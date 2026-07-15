@@ -2,7 +2,7 @@
  * Footer/status bar — multi-line status display at the bottom of the TUI.
  *
  * Layout:
- *   Line 1: [yolo] [plan] <model> <cwd>  <git-badge>  <shortcut hints>
+ *   Line 1: [yolo] [plan] <model> <cwd>  <git-badge>
  *   Line 2: context: XX.X% (tokens/max)
  */
 
@@ -11,7 +11,7 @@ import { truncateToWidth, visibleWidth } from '@moonshot-ai/pi-tui';
 import chalk from 'chalk';
 import { effectiveModelAlias } from '@moonshot-ai/kimi-code-sdk';
 
-import { ALL_TIPS, type ToolbarTip } from '#/tui/constant/tips';
+import type { ToolbarTip } from '#/tui/constant/tips';
 import { isRainbowDancing, renderDanceFooterModel } from '#/tui/easter-eggs/dance';
 import { currentTheme } from '#/tui/theme';
 import type { ColorPalette } from '#/tui/theme/colors';
@@ -28,20 +28,12 @@ import { safeUsageRatio } from '#/utils/usage/usage-format';
 const MAX_CWD_SEGMENTS = 3;
 const GOAL_TIMER_INTERVAL_MS = 1_000;
 
-// Toolbar tips — rotates every 10s. Most tips are short and pair up (two
-// joined by " | ") when space allows; tips flagged `solo` are long or
-// important enough to take the whole slot on their own. A `priority` weight
-// makes a tip recur more often in the rotation (default 1). Width is always
-// the final arbiter (a pair that doesn't fit falls back to its first tip).
-const TIP_ROTATE_INTERVAL_MS = 10_000;
-const TIP_SEPARATOR = ' | ';
-
 /**
  * Expand tips into a rotation sequence using smooth weighted round-robin
  * (the nginx SWRR algorithm). Higher-`priority` tips appear more often while
  * staying evenly spread, so a tip generally does not land next to its own
  * duplicate. Deterministic and computed once at module load. Exported for
- * unit testing.
+ * use by the working-tips picker; the footer itself no longer renders tips.
  */
 export function buildWeightedTips(tips: readonly ToolbarTip[]): readonly ToolbarTip[] {
   const items = tips.map((t) => ({
@@ -61,31 +53,6 @@ export function buildWeightedTips(tips: readonly ToolbarTip[]): readonly Toolbar
     seq.push(best.tip);
   }
   return seq;
-}
-
-const ROTATION: readonly ToolbarTip[] = buildWeightedTips(ALL_TIPS);
-
-function currentTipIndex(): number {
-  return Math.floor(Date.now() / TIP_ROTATE_INTERVAL_MS);
-}
-
-/**
- * Pick the tip(s) for a rotation index over the weighted ROTATION sequence.
- * `primary` is always shown when it fits; `pair` (primary + next tip joined
- * by the separator) is offered for wide terminals. Pairing is skipped when
- * the current/next tip is `solo` or when the neighbour is a duplicate of the
- * current tip (which can happen at the wrap boundary), keeping long/important
- * tips on their own and avoiding "X | X".
- */
-function tipsForIndex(index: number): { primary: string; pair: string | null } {
-  const n = ROTATION.length;
-  if (n === 0) return { primary: '', pair: null };
-  const offset = ((index % n) + n) % n;
-  const current = ROTATION[offset]!;
-  if (n === 1 || current.solo) return { primary: current.text, pair: null };
-  const next = ROTATION[(offset + 1) % n]!;
-  if (next.solo || next.text === current.text) return { primary: current.text, pair: null };
-  return { primary: current.text, pair: current.text + TIP_SEPARATOR + next.text };
 }
 
 /**
@@ -257,6 +224,8 @@ export class FooterComponent implements Component {
     if (state.permissionMode === 'yolo') modes.push(chalk.hex(colors.warning).bold('yolo'));
     if (state.planMode) modes.push(chalk.hex(colors.primary).bold('plan'));
     if (state.swarmMode) modes.push(chalk.hex(colors.accent).bold('swarm'));
+    if (state.toolOutputExpanded) modes.push(chalk.hex(colors.accent).bold('xtool'));
+    if (state.thinkingExpandedLocked) modes.push(chalk.hex(colors.primary).bold('xthink'));
     if (modes.length > 0) left.push(modes.join(' '));
 
     const goalBadge = formatGoalBadge(state.goal, colors, this.goalWallClockMs(state.goal));
@@ -311,22 +280,9 @@ export class FooterComponent implements Component {
     const leftLine = left.join('  ');
     const leftWidth = visibleWidth(leftLine);
 
-    // Rotating hint tips, fill remaining space on line 1.
-    const { primary, pair } = tipsForIndex(currentTipIndex());
-    const gap = 2;
-    const remaining = Math.max(0, width - leftWidth - gap);
-    let tipText = '';
-    if (pair && visibleWidth(pair) <= remaining) {
-      tipText = pair;
-    } else if (primary && visibleWidth(primary) <= remaining) {
-      tipText = primary;
-    }
-
+    // Rotating toolbar tips are intentionally disabled in this fork.
     let line1: string;
-    if (tipText) {
-      const pad = width - leftWidth - visibleWidth(tipText);
-      line1 = leftLine + ' '.repeat(Math.max(0, pad)) + chalk.hex(colors.textMuted)(tipText);
-    } else if (leftWidth <= width) {
+    if (leftWidth <= width) {
       line1 = leftLine;
     } else {
       line1 = truncateToWidth(leftLine, width, '…');

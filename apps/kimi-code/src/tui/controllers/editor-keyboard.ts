@@ -19,6 +19,7 @@ import { extractMediaAttachments } from '../utils/image-placeholder';
 import type { PendingExit, QueuedMessage, SteerInputItem } from '../types';
 import type { TUIState } from '../tui-state';
 import type { BtwPanelController } from './btw-panel';
+import type { ShellEvalPanelController } from './shell-eval-panel';
 
 export interface EditorKeyboardHost {
   state: TUIState;
@@ -33,6 +34,7 @@ export interface EditorKeyboardHost {
 
   handleUserInput(text: string): void;
   readonly btwPanelController: BtwPanelController;
+  readonly shellEvalPanelController: ShellEvalPanelController;
   steerMessage(session: Session, input: readonly SteerInputItem[]): void;
   validateMediaCapabilities(extraction: {
     hasMedia: boolean;
@@ -45,6 +47,7 @@ export interface EditorKeyboardHost {
   updateEditorBorderHighlight(text?: string): void;
   updateQueueDisplay(): void;
   toggleToolOutputExpansion(): void;
+  toggleThinkingExpansion(): void;
   toggleTodoPanelExpansion(): void;
   detachCurrentForegroundTask(): void;
   cancelRunningShellCommand(): void;
@@ -142,7 +145,15 @@ export class EditorKeyboardController {
         this.clearPendingExit();
         return;
       }
+      if (host.shellEvalPanelController.cancelRunning()) {
+        this.clearPendingExit();
+        return;
+      }
       if (host.btwPanelController.closeOrCancel()) {
+        this.clearPendingExit();
+        return;
+      }
+      if (host.shellEvalPanelController.closeOrCancel()) {
         this.clearPendingExit();
         return;
       }
@@ -184,17 +195,20 @@ export class EditorKeyboardController {
         this.clearPendingUndoEsc();
         return;
       }
-      if (host.state.appState.isCompacting) {
-        this.cancelCurrentCompaction();
-        this.clearPendingUndoEsc();
-        return;
-      }
       if (host.btwPanelController.closeOrCancel()) {
         this.clearPendingUndoEsc();
         return;
       }
-      if (host.state.appState.streamingPhase !== 'idle') {
-        this.cancelCurrentStream();
+      if (host.shellEvalPanelController.closeOrCancel()) {
+        this.clearPendingUndoEsc();
+        return;
+      }
+      // Esc does not interrupt running work; Ctrl-C handles that. While
+      // streaming or compacting, ignore Esc entirely (no undo arming either).
+      if (
+        host.state.appState.isCompacting ||
+        host.state.appState.streamingPhase !== 'idle'
+      ) {
         this.clearPendingUndoEsc();
         return;
       }
@@ -230,6 +244,11 @@ export class EditorKeyboardController {
     editor.onToggleToolExpand = () => {
       host.track('shortcut_expand');
       host.toggleToolOutputExpansion();
+    };
+
+    editor.onToggleThinkingExpand = () => {
+      host.track('shortcut_thinking_expand');
+      host.toggleThinkingExpansion();
     };
 
     editor.onToggleTodoExpand = (): boolean => {
@@ -330,6 +349,7 @@ export class EditorKeyboardController {
 
     editor.onUpArrowEmpty = () => {
       if (host.btwPanelController.scroll('up')) return true;
+      if (host.shellEvalPanelController.scroll('up')) return true;
       if (host.state.appState.streamingPhase === 'idle' && !host.state.appState.isCompacting) return false;
       const recalled = host.recallLastQueued();
       if (recalled !== undefined) {
@@ -338,8 +358,7 @@ export class EditorKeyboardController {
         // shell command again instead of being submitted as a normal prompt.
         const mode = recalled.mode ?? 'prompt';
         if (editor.inputMode !== mode) {
-          editor.inputMode = mode;
-          editor.onInputModeChange?.(mode);
+          editor.setInputMode(mode);
         }
         host.updateQueueDisplay();
         host.state.ui.requestRender();
@@ -348,7 +367,8 @@ export class EditorKeyboardController {
       return false;
     };
 
-    editor.onDownArrowEmpty = () => host.btwPanelController.scroll('down');
+    editor.onDownArrowEmpty = () =>
+      host.btwPanelController.scroll('down') || host.shellEvalPanelController.scroll('down');
 
     editor.onPasteImage = async () => this.handleClipboardImagePaste();
   }

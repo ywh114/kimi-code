@@ -51,6 +51,8 @@ const appState: AppState = {
   planMode: false,
   inputMode: 'prompt',
   swarmMode: false,
+  toolOutputExpanded: false,
+  thinkingExpandedLocked: false,
   theme: 'dark',
   editorCommand: null,
   notifications: { enabled: true, condition: 'unfocused' },
@@ -142,6 +144,20 @@ describe('FooterComponent', () => {
 
     expect(rendered).toContain('thinking');
     expect(rendered).not.toContain('thinking:high');
+  });
+
+  it('shows the xtool badge when tool output expansion is toggled', () => {
+    const state: AppState = { ...appState, toolOutputExpanded: true };
+    const footer = new FooterComponent(state);
+
+    expect(footer.render(120).join('\n')).toContain('xtool');
+  });
+
+  it('shows the xthink badge when live thinking expansion is locked', () => {
+    const state: AppState = { ...appState, thinkingExpandedLocked: true };
+    const footer = new FooterComponent(state);
+
+    expect(footer.render(120).join('\n')).toContain('xthink');
   });
 });
 

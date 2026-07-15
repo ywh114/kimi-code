@@ -55,6 +55,7 @@ export class StreamingUIController {
   private _thinkingDraft = '';
   private _streamingBlock: { component: AssistantMessageComponent; entry: TranscriptEntry } | null = null;
   private _activeThinkingComponent: ThinkingComponent | undefined = undefined;
+  private _thinkingExpandedLocked = false;
   private _activeCompactionBlock: CompactionComponent | undefined = undefined;
   private _activeToolCalls = new Map<string, ToolCallBlockData>();
   private _streamingToolCallArguments = new Map<
@@ -120,6 +121,19 @@ export class StreamingUIController {
 
   hasActiveThinkingComponent(): boolean {
     return this._activeThinkingComponent !== undefined;
+  }
+
+  toggleThinkingExpanded(): boolean {
+    this._thinkingExpandedLocked = !this._thinkingExpandedLocked;
+    if (this._activeThinkingComponent !== undefined) {
+      this._activeThinkingComponent.setExpanded(this._thinkingExpandedLocked);
+    }
+    this.host.state.ui.requestRender();
+    return this._thinkingExpandedLocked;
+  }
+
+  isThinkingExpandedLocked(): boolean {
+    return this._thinkingExpandedLocked;
   }
 
   hasStreamingBlock(): boolean {
@@ -633,7 +647,9 @@ export class StreamingUIController {
         'live',
         state.ui,
       );
-      if (state.toolOutputExpanded) this._activeThinkingComponent.setExpanded(true);
+      if (state.toolOutputExpanded || this._thinkingExpandedLocked) {
+        this._activeThinkingComponent.setExpanded(true);
+      }
       state.transcriptContainer.addChild(this._activeThinkingComponent);
     } else {
       this._activeThinkingComponent.setText(fullText);

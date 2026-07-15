@@ -1576,17 +1576,16 @@ command = "vim"
     expect(harness.track).toHaveBeenCalledWith('input_queue', undefined);
   });
 
-  it('cancels active streaming from Escape and Ctrl-C editor shortcuts', async () => {
+  it('cancels active streaming from the Ctrl-C editor shortcut', async () => {
     const { driver, session } = await makeDriver();
 
     driver.state.appState.streamingPhase = 'waiting';
     driver.state.editor.setText('draft while streaming');
     driver.state.editor.onEscape?.();
 
-    expect(session.cancel).toHaveBeenCalledTimes(1);
+    expect(session.cancel).not.toHaveBeenCalled();
     expect(driver.state.editor.getText()).toBe('draft while streaming');
 
-    session.cancel.mockClear();
     driver.state.appState.streamingPhase = 'waiting';
     driver.state.editor.setText('');
     driver.state.editor.onCtrlC?.();
@@ -1653,6 +1652,42 @@ command = "vim"
     expect(driver.state.queuedMessages).toEqual([
       { text: 'ls', agentId: 'main', mode: 'bash' },
     ]);
+  });
+
+  it('keeps bash mode after submit when it is sticky (Ctrl+X)', async () => {
+    const runShellCommand = vi.fn(async () => ({ stdout: '', stderr: '', isError: false }));
+    const session = makeSession({ runShellCommand });
+    const { driver } = await makeDriver(session);
+
+    driver.state.editor.setInputMode('bash', { sticky: true });
+
+    driver.handleUserInput('ls');
+    await Promise.resolve();
+
+    expect(runShellCommand).toHaveBeenCalledWith(
+      'ls',
+      expect.objectContaining({ commandId: expect.any(String) }),
+    );
+    expect(driver.state.appState.inputMode).toBe('bash');
+    expect(driver.state.editor.inputMode).toBe('bash');
+  });
+
+  it('returns to prompt mode after a non-sticky bash submit', async () => {
+    const runShellCommand = vi.fn(async () => ({ stdout: '', stderr: '', isError: false }));
+    const session = makeSession({ runShellCommand });
+    const { driver } = await makeDriver(session);
+
+    driver.state.editor.setInputMode('bash');
+
+    driver.handleUserInput('ls');
+    await Promise.resolve();
+
+    expect(runShellCommand).toHaveBeenCalledWith(
+      'ls',
+      expect.objectContaining({ commandId: expect.any(String) }),
+    );
+    expect(driver.state.appState.inputMode).toBe('prompt');
+    expect(driver.state.editor.inputMode).toBe('prompt');
   });
 
   it('dispatches a queued bash item to runShellCommand instead of prompt', async () => {
@@ -2164,7 +2199,7 @@ command = "vim"
     }
   });
 
-  it('cancels manual compaction from the editor', async () => {
+  it('cancels manual compaction from the editor with Ctrl-C', async () => {
     const { driver, session } = await makeDriver();
     driver.sessionEventHandler.handleEvent(
       {
@@ -2178,9 +2213,8 @@ command = "vim"
 
     driver.state.editor.onEscape?.();
 
-    expect(session.cancelCompaction).toHaveBeenCalledTimes(1);
+    expect(session.cancelCompaction).not.toHaveBeenCalled();
 
-    session.cancelCompaction.mockClear();
     driver.state.appState.isCompacting = true;
     driver.state.editor.onCtrlC?.();
 
@@ -2460,13 +2494,11 @@ command = "vim"
     const editorTopBorder = stripSgr(driver.state.editor.render(80)[0] ?? '');
     expect(panel).toContain('BTW ─ Esc close');
     expect(panel).not.toContain('ctrl+o expand');
-    expect(editorTopBorder.startsWith('├')).toBe(true);
-    expect(editorTopBorder.endsWith('┤')).toBe(true);
+    expect(editorTopBorder).toBe('─'.repeat(80));
 
     driver.state.editor.handleInput('/');
     const highlightedEditorTopBorder = stripSgr(driver.state.editor.render(80)[0] ?? '');
-    expect(highlightedEditorTopBorder.startsWith('╭')).toBe(true);
-    expect(highlightedEditorTopBorder.endsWith('╮')).toBe(true);
+    expect(highlightedEditorTopBorder).toBe('─'.repeat(80));
     expect(panel).not.toContain('BTW done');
     expect(panel).not.toContain('BTW running');
     expect(panel).not.toContain('BTW failed');
@@ -2531,8 +2563,9 @@ command = "vim"
     const transcript = stripSgr(renderTranscript(driver));
     const panel = stripSgr(renderBtwPanel(driver));
     const rootChildren = driver.state.ui.children;
+    // The shell-eval panel container sits between the /btw panel and the editor.
     expect(rootChildren.indexOf(driver.state.btwPanelContainer)).toBe(
-      rootChildren.indexOf(driver.state.editorContainer) - 1,
+      rootChildren.indexOf(driver.state.editorContainer) - 2,
     );
     expect(transcript).toContain('main answer after btw');
     expect(transcript).not.toContain('side answer');
@@ -2707,8 +2740,7 @@ command = "vim"
     expect(driver.state.btwPanelContainer.children).toHaveLength(0);
     expect(requestRender.mock.calls.at(-1)).toEqual([true]);
     const editorTopBorder = stripSgr(driver.state.editor.render(80)[0] ?? '');
-    expect(editorTopBorder.startsWith('╭')).toBe(true);
-    expect(editorTopBorder.endsWith('╮')).toBe(true);
+    expect(editorTopBorder).toBe('─'.repeat(80));
     expect(driver.state.editor.focused).toBe(true);
   });
 
@@ -3118,7 +3150,7 @@ command = "vim"
     expect(driver.state.queuedMessages).toEqual([]);
   });
 
-  it('cancels the active /init request through the session', async () => {
+  it('cancels the active /init request through the session with Ctrl-C', async () => {
     let resolveInit: (() => void) | undefined;
     const session = makeSession({
       init: vi.fn(
@@ -3135,7 +3167,7 @@ command = "vim"
       expect(session.init).toHaveBeenCalledTimes(1);
     });
 
-    driver.state.editor.onEscape?.();
+    driver.state.editor.onCtrlC?.();
 
     await vi.waitFor(() => {
       expect(session.cancel).toHaveBeenCalledTimes(1);
@@ -5068,6 +5100,39 @@ command = "vim"
     const transcript = stripSgr(renderTranscript(driver));
     expect(transcript).toContain('t7');
     expect(transcript).not.toContain('ctrl+o expand');
+  });
+
+  it('finalizes live thinking when a tool call starts', async () => {
+    const { driver, session } = await makeDriver();
+    session.runShellCommand = vi.fn(async () => ({ stdout: '', stderr: '', isError: false }));
+
+    driver.sessionEventHandler.handleEvent(
+      {
+        type: 'thinking.delta',
+        agentId: 'main',
+        sessionId: 'ses-1',
+        delta: 'reasoning...',
+      } as Event,
+      vi.fn(),
+    );
+    driver.streamingUI.flushNow();
+    expect(driver.streamingUI.hasActiveThinkingComponent()).toBe(true);
+
+    driver.sessionEventHandler.handleEvent(
+      {
+        type: 'tool.call.started',
+        agentId: 'main',
+        sessionId: 'ses-1',
+        toolCallId: 'call-1',
+        name: 'Bash',
+        args: { command: 'ls' },
+        description: 'List files',
+        display: { kind: 'generic', summary: 'List files', detail: { command: 'ls' } },
+      } as Event,
+      vi.fn(),
+    );
+
+    expect(driver.streamingUI.hasActiveThinkingComponent()).toBe(false);
   });
 
   it('renders hook results without XML tags', async () => {

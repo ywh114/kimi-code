@@ -105,7 +105,7 @@ describe('GoalSetMessageComponent', () => {
     const rendered = new GoalSetMessageComponent().render(60);
     // Leading blank line separates it from the line above.
     expect(rendered[0]).toBe('');
-    expect(strip(rendered)).toBe('\n● Goal set');
+    expect(strip(rendered)).toBe('\n• Goal set');
   });
 
   it('renders the marker and label in the primary accent', () => {
@@ -131,7 +131,7 @@ describe('UpcomingGoalAddedMessageComponent', () => {
     const rendered = new UpcomingGoalAddedMessageComponent().render(80);
 
     expect(strip(rendered)).toBe(
-      '\n● Upcoming goal added. It will start after the current goal is complete.',
+      '\n• Upcoming goal added. It will start after the current goal is complete.',
     );
     expect(rendered[1]).toBe(
       chalk.hex(darkColors.primary).bold(STATUS_BULLET) +
