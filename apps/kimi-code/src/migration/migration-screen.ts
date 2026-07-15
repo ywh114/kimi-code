@@ -31,10 +31,10 @@ import {
 
 type Phase = 'ask1' | 'ask2' | 'progress' | 'result';
 
-const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'] as const;
+const SPINNER_FRAMES = ['|', '/', '-', '\\'] as const;
 
-/** Spinner frame cadence — one full braille cycle every ~800ms. */
-const SPINNER_INTERVAL_MS = 80;
+/** Spinner frame cadence — one full ASCII cycle every ~480ms. */
+const SPINNER_INTERVAL_MS = 120;
 
 const STEP_LABELS: ReadonlyArray<readonly [string, string]> = [
   ['config', 'Config'],

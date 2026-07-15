@@ -640,31 +640,66 @@ describe('CustomEditor shortcut telemetry hooks', () => {
   });
 });
 
-describe('CustomEditor bash mode border label', () => {
+describe('CustomEditor flat prompt strip', () => {
   // oxlint-disable-next-line no-control-regex -- ESC (\u001B) is required to match ANSI SGR escape sequences
   const stripAnsi = (s: string): string => s.replaceAll(/\u001B\[[0-9;]*m/g, '');
 
-  it('shows "! shell mode" on the top border in bash mode', () => {
-    const editor = makeEditor();
-    editor.inputMode = 'bash';
-    const top = stripAnsi(editor.render(90)[0] ?? '');
-    expect(top.startsWith('╭')).toBe(true);
-    expect(top).toContain('! shell mode');
-    expect(top.endsWith('╮')).toBe(true);
-  });
-
-  it('does not show the shell mode label in prompt mode', () => {
+  it('draws a flat horizontal top border with no corners', () => {
     const editor = makeEditor();
     const top = stripAnsi(editor.render(90)[0] ?? '');
-    expect(top).not.toContain('! shell mode');
+    expect(top).toBe('─'.repeat(90));
   });
 
-  it('keeps the top border at full width when the label is present', () => {
+  it('shows a "$" prompt in bash mode', () => {
     const editor = makeEditor();
     editor.inputMode = 'bash';
-    const width = 90;
-    const top = stripAnsi(editor.render(width)[0] ?? '');
-    expect(top).toHaveLength(width);
+    const content = stripAnsi(editor.render(90)[1] ?? '');
+    expect(content.startsWith('$ ')).toBe(true);
+  });
+
+  it('shows a "&" prompt when bash input starts with !!', () => {
+    const editor = makeEditor();
+    editor.inputMode = 'bash';
+    editor.setText('!ls');
+    const content = stripAnsi(editor.render(90)[1] ?? '');
+    expect(content.startsWith('& ')).toBe(true);
+  });
+
+  it('switches from "$" to "&" while typing !!', () => {
+    const editor = makeEditor();
+    editor.handleInput('!');
+    expect(editor.inputMode).toBe('bash');
+    expect(stripAnsi(editor.render(90)[1] ?? '').startsWith('$ ')).toBe(true);
+
+    editor.handleInput('!');
+    expect(editor.getText()).toBe('');
+    expect(editor.shellEvalPrefix).toBe(true);
+    expect(stripAnsi(editor.render(90)[1] ?? '').startsWith('& ')).toBe(true);
+  });
+
+  it('switches from "$" to "&" while typing !! via Kitty CSI-u', () => {
+    const editor = makeEditor();
+    editor.handleInput('\u001B[33u');
+    expect(editor.inputMode).toBe('bash');
+    expect(stripAnsi(editor.render(90)[1] ?? '').startsWith('$ ')).toBe(true);
+
+    editor.handleInput('\u001B[33u');
+    expect(editor.getText()).toBe('');
+    expect(editor.shellEvalPrefix).toBe(true);
+    expect(stripAnsi(editor.render(90)[1] ?? '').startsWith('& ')).toBe(true);
+  });
+
+  it('shows a ">" prompt in prompt mode', () => {
+    const editor = makeEditor();
+    const content = stripAnsi(editor.render(90)[1] ?? '');
+    expect(content.startsWith('> ')).toBe(true);
+  });
+
+  it('does not render a "! shell mode" border label', () => {
+    const editor = makeEditor();
+    editor.inputMode = 'bash';
+    const plain = editor.render(90).map(stripAnsi).join('\n');
+    expect(plain).not.toContain('! shell mode');
   });
 });
 
@@ -724,6 +759,40 @@ describe('CustomEditor bash mode via paste', () => {
 
     expect(editor.inputMode).toBe('bash');
     expect(editor.getText()).toBe('');
+  });
+
+  it('marks Ctrl+X bash mode as sticky', () => {
+    const editor = makeEditor();
+    editor.handleInput('\u0018'); // Ctrl+X
+
+    expect(editor.inputMode).toBe('bash');
+    expect(editor.isBashModeSticky()).toBe(true);
+  });
+
+  it('marks typed ! bash mode as non-sticky', () => {
+    const editor = makeEditor();
+    editor.handleInput('!');
+
+    expect(editor.inputMode).toBe('bash');
+    expect(editor.isBashModeSticky()).toBe(false);
+  });
+
+  it('clears sticky when Ctrl+X returns to prompt mode', () => {
+    const editor = makeEditor();
+    editor.handleInput('\u0018'); // Ctrl+X -> bash
+    editor.handleInput('\u0018'); // Ctrl+X -> prompt
+
+    expect(editor.inputMode).toBe('prompt');
+    expect(editor.isBashModeSticky()).toBe(false);
+  });
+
+  it('clears sticky when leaving empty bash mode with Escape or Backspace', () => {
+    const editor = makeEditor();
+    editor.handleInput('\u0018'); // Ctrl+X -> bash sticky
+    editor.handleInput('\u001B'); // Escape
+
+    expect(editor.inputMode).toBe('prompt');
+    expect(editor.isBashModeSticky()).toBe(false);
   });
 });
 

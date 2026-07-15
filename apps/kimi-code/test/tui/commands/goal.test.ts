@@ -472,7 +472,7 @@ describe('handleGoalCommand', () => {
     const addChild = host.state.transcriptContainer.addChild as ReturnType<typeof vi.fn>;
     const message = addChild.mock.calls[0]?.[0] as { render(width: number): string[] };
     expect(stripAnsi(message.render(80).join('\n'))).toBe(
-      '\n● Upcoming goal added. It will start after the current goal is complete.',
+      '\n• Upcoming goal added. It will start after the current goal is complete.',
     );
     expect(host.state.ui.requestRender).toHaveBeenCalled();
     expect(host.sendNormalUserInput).not.toHaveBeenCalled();

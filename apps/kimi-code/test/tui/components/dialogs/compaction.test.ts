@@ -34,7 +34,7 @@ describe('CompactionComponent', () => {
       const lines = component.render(120).map(strip);
       const text = lines.join('\n');
 
-      expect(text).toContain('Compacting context... · Tip: ctrl+s: steer mid-turn');
+      expect(text).toContain('Compacting context... · ctrl+s: steer mid-turn');
     } finally {
       component.dispose();
     }

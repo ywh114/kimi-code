@@ -7,7 +7,6 @@ export type ActivityPaneMode = 'hidden' | 'waiting' | 'thinking' | 'composing' |
 export interface ActivityPaneOptions {
   readonly mode: ActivityPaneMode;
   readonly spinner?: MoonLoader;
-  readonly tip?: string;
 }
 
 export class ActivityPaneComponent extends Container {
@@ -22,9 +21,6 @@ export class ActivityPaneComponent extends Container {
       options.spinner !== undefined
     ) {
       this.addChild(new Spacer(1));
-      if (options.tip) {
-        options.spinner.setTip(` · Tip: ${options.tip}`);
-      }
       this.addChild(options.spinner);
     }
   }

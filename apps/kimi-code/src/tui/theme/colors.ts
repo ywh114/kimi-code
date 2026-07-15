@@ -73,8 +73,8 @@ export interface ColorPalette {
   roleUser: string;
 
   // ── Shell mode ──
-  /** Shell mode (`!`): the `!` prompt symbol, bash-mode editor border, and the
-   *  echoed `$ command` line. Its own hue (violet), distinct from
+  /** Shell mode (`!`): the `$` / `&` prompt symbols, bash-mode editor border,
+   *  and the echoed `$ command` line. Its own hue (violet), distinct from
    *  plan-mode (primary) and the user role (roleUser). */
   shellMode: string;
 }
