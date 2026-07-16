@@ -205,12 +205,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const thinkingEffort = defaultEffortForModel(model, defaultThinking, defaultThinkingEffort);
     set({ currentModel: modelId, thinkingEffort });
     saveConfigWithRollback(
-      {
-        model: modelId,
-        thinking: thinkingEffort !== "off",
-        effort: thinkingEffort,
-        effortChanged: thinkingEffort !== previousEffort,
-      },
+      { model: modelId, thinking: thinkingEffort !== "off", effort: thinkingEffort },
       { currentModel, thinkingEffort: previousEffort },
       set,
     );
@@ -252,19 +247,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const alwaysOn = model.capabilities.includes("always_thinking");
     if (thinkingEffort !== "off" && thinkingEffort !== "on" && !allowed.includes(thinkingEffort)) return;
     if (alwaysOn && thinkingEffort === "off") return;
-    // Re-confirming the effort already shown is not an explicit choice —
-    // skip the state update and the config write entirely.
-    if (thinkingEffort === previousEffort) return;
     set({
       thinkingEffort,
       defaultThinking: thinkingEffort !== "off",
-      // The model's top declared tier is session-only (only the boolean
-      // toggle is persisted), so it must not become the configured-effort
-      // seed for future sessions.
-      defaultThinkingEffort:
-        thinkingEffort !== "off" && thinkingEffort !== "on" && thinkingEffort !== allowed.at(-1)
-          ? thinkingEffort
-          : defaultThinkingEffort,
+      defaultThinkingEffort: thinkingEffort !== "off" && thinkingEffort !== "on" ? thinkingEffort : undefined,
     });
     saveConfigWithRollback(
       { model: currentModel, thinking: thinkingEffort !== "off", effort: thinkingEffort },

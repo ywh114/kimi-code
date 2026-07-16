@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { useSettingsStore } from "@/stores";
 import { bridge } from "@/services";
-import { toast } from "@/components/ui/sonner";
 import { cn } from "@/lib/utils";
 
 interface ActionMenuProps {
@@ -72,23 +71,16 @@ export function ActionMenu({ className, onAuthAction }: ActionMenuProps) {
   };
 
   const handleAuthAction = async () => {
-    setLoading(true);
-    try {
-      if (isLoggedIn) {
+    if (isLoggedIn) {
+      setLoading(true);
+      try {
         await bridge.logout();
         setIsLoggedIn(false);
-      } else {
-        const result = await bridge.login();
-        if (result.success) {
-          setIsLoggedIn(true);
-        } else {
-          toast.error(result.error ?? "Sign-in failed. Check the logs for details.");
-        }
+      } finally {
+        setLoading(false);
       }
-    } finally {
-      setLoading(false);
-      setOpen(false);
     }
+    setOpen(false);
     onAuthAction?.();
   };
 

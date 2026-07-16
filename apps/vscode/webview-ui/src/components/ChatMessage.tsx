@@ -1,4 +1,4 @@
-import { useState, Fragment, memo } from "react";
+import { useState, Fragment } from "react";
 import { IconLoader3, IconGitFork } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { Content } from "@/lib/content";
@@ -146,9 +146,7 @@ interface ForkButtonProps {
 function ForkButton({ turnIndex, className }: ForkButtonProps) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [isForking, setIsForking] = useState(false);
-  const sessionId = useChatStore((s) => s.sessionId);
-  const isStreaming = useChatStore((s) => s.isStreaming);
-  const loadSession = useChatStore((s) => s.loadSession);
+  const { sessionId, isStreaming, loadSession } = useChatStore();
 
   const handleFork = () => {
     if (!sessionId || turnIndex < 0) return;
@@ -236,7 +234,7 @@ function UserMessage({ message }: { message: ChatMessageType }) {
 
 function AssistantMessage({ message, turnIndex, isStreaming }: { message: ChatMessageType; turnIndex?: number; isStreaming?: boolean }) {
   const [previewMedia, setPreviewMedia] = useState<string | null>(null);
-  const isCompacting = useChatStore((s) => s.isCompacting);
+  const { isCompacting } = useChatStore();
 
   const steps = message.steps || [];
   const hasSteps = steps.length > 0;
@@ -332,9 +330,9 @@ function hasMessageContent(message: ChatMessageType): boolean {
   return message.steps?.some((s) => s.items.length > 0) ?? false;
 }
 
-export const ChatMessage = memo(function ChatMessage({ message, turnIndex, isStreaming }: ChatMessageProps) {
+export function ChatMessage({ message, turnIndex, isStreaming }: ChatMessageProps) {
   if (message.role === "user") {
     return <UserMessage message={message} />;
   }
   return <AssistantMessage message={message} turnIndex={turnIndex} isStreaming={isStreaming} />;
-});
+}
