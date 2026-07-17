@@ -25,6 +25,7 @@ import { handleCopyCommand } from './copy';
 import {
   handleAutoCommand,
   handleCompactCommand,
+  handleContextMaxCommand,
   handleEditorCommand,
   handleEffortCommand,
   handleModelCommand,
@@ -67,6 +68,7 @@ export { handleAddDirCommand } from './add-dir';
 export {
   handleAutoCommand,
   handleCompactCommand,
+  handleContextMaxCommand,
   handleEditorCommand,
   handleEffortCommand,
   handleModelCommand,
@@ -305,6 +307,9 @@ async function handleBuiltInSlashCommand(
       return;
     case 'effort':
       await handleEffortCommand(host, args);
+      return;
+    case 'context-max':
+      await handleContextMaxCommand(host, args);
       return;
     case 'provider':
       await handleProviderCommand(host);

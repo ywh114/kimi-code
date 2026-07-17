@@ -36,7 +36,7 @@ export interface AppState {
   swarmMode: boolean;
   /** True when Ctrl+O tool/output expansion is active. */
   toolOutputExpanded: boolean;
-  /** True when Ctrl+E live-thinking expansion is locked on. */
+  /** True when Ctrl+Y live-thinking expansion is locked on. */
   thinkingExpandedLocked: boolean;
   /** Live thinking effort of the active session (e.g. 'off', 'on', 'high');
    * mirrors the runtime. The single source of truth for the thinking state in

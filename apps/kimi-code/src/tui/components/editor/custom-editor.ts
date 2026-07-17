@@ -14,7 +14,7 @@ import {
 
 import { currentTheme } from '#/tui/theme';
 import { createEditorTheme } from '#/tui/theme/pi-tui-theme';
-import { printableChar } from '#/tui/utils/printable-key';
+import { isPrintableChar, printableChar } from '#/tui/utils/printable-key';
 import { isInsideTmux } from '#/tui/utils/terminal-notification';
 
 import { extractAtPrefix } from './file-mention-provider';
@@ -161,6 +161,16 @@ export class CustomEditor extends Editor {
    * shell command. The prefix `!` is not in the text buffer.
    */
   public shellEvalPrefix = false;
+  /**
+   * Reverse-i-search state. The editor text holds the search query; the matched
+   * history entry is shown as a dim hint. The original input is restored on cancel.
+   */
+  private reverseSearch: {
+    query: string;
+    matchIndex: number;
+    originalText: string;
+    originalMode: 'prompt' | 'bash';
+  } | null = null;
   /**
    * Called when the user triggers "paste image" (Ctrl-V on Unix,
    * Alt-V on Windows — Ctrl-V is terminal-reserved there). Return
@@ -333,16 +343,25 @@ export class CustomEditor extends Editor {
     }
     const firstContent = lines[firstContentIdx];
     if (firstContent !== undefined) {
-      // Normal bash mode shows `$`; a leading `!` in bash mode means the user
-      // is typing `!!` for a side/concurrent shell command, so show `&`.
-      let promptSymbol = isBash ? '$' : '>';
-      if (isBash && (text.startsWith('!') || this.shellEvalPrefix)) {
-        promptSymbol = '&';
+      let promptSymbol: string;
+      let paint: ((s: string) => string) | undefined;
+      if (this.reverseSearch !== null) {
+        // Reverse-i-search uses a `?` prompt.
+        promptSymbol = '?';
+        paint = undefined;
+      } else {
+        // Normal bash mode shows `$`; a leading `!` in bash mode means the user
+        // is typing `!!` for a side/concurrent shell command, so show `&`.
+        promptSymbol = isBash ? '$' : '>';
+        if (isBash && (text.startsWith('!') || this.shellEvalPrefix)) {
+          promptSymbol = '&';
+        }
+        paint = isBash ? (s) => this.borderColor(s) : undefined;
       }
       const withPrompt = injectPromptSymbol(
         firstContent,
         promptSymbol,
-        isBash ? (s) => this.borderColor(s) : undefined,
+        paint,
       );
       if (withPrompt !== undefined) {
         lines[firstContentIdx] = withPrompt;
@@ -354,6 +373,10 @@ export class CustomEditor extends Editor {
   }
 
   private computeArgumentHint(): string | undefined {
+    if (this.reverseSearch !== null) {
+      const entry = this.getReverseSearchEntryText(this.reverseSearch.matchIndex);
+      return entry === undefined ? ' (no match)' : ` ${entry}`;
+    }
     // Argument hints describe slash commands, which do not exist in bash mode.
     if (this.inputMode === 'bash') return undefined;
     const text = this.getText();
@@ -369,6 +392,119 @@ export class CustomEditor extends Editor {
     const currentLine = this.getLines()[0] ?? '';
     if (col !== currentLine.length) return undefined;
     return trailingSpace.length > 0 ? hint : ` ${hint}`;
+  }
+
+  private getReverseSearchEntryText(index: number): string | undefined {
+    if (index < 0) return undefined;
+    const entries = super.getHistoryEntries();
+    const raw = entries[index];
+    if (raw === undefined) return undefined;
+    return this.formatReverseSearchEntry(raw);
+  }
+
+  private formatReverseSearchEntry(raw: string, mode?: 'prompt' | 'bash'): string {
+    const effectiveMode = mode ?? this.reverseSearch?.originalMode ?? 'prompt';
+    if (effectiveMode === 'bash') {
+      return raw.startsWith('!') ? raw.slice(1) : raw;
+    }
+    return raw;
+  }
+
+  private findReverseSearchMatch(query: string, startAfter = -1): number {
+    const entries = super.getHistoryEntries();
+    const isBash = this.reverseSearch?.originalMode === 'bash';
+    const lower = query.toLowerCase();
+    for (let i = startAfter + 1; i < entries.length; i++) {
+      const raw = entries[i];
+      if (raw === undefined) continue;
+      if (isBash && !raw.startsWith('!')) continue;
+      const text = isBash ? raw.slice(1) : raw;
+      if (text.toLowerCase().includes(lower)) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  private startReverseSearch(): void {
+    const originalText = this.getText();
+    this.reverseSearch = {
+      query: originalText,
+      matchIndex: -1,
+      originalText,
+      originalMode: this.inputMode,
+    };
+    this.setText(originalText);
+    this.updateReverseSearchMatch();
+  }
+
+  private updateReverseSearchMatch(): void {
+    if (this.reverseSearch === null) return;
+    const index = this.findReverseSearchMatch(this.reverseSearch.query, -1);
+    this.reverseSearch.matchIndex = index;
+    // Force a full redraw: the matched history hint changes length frequently
+    // and differential rendering can leave stale cells when the screen scrolls.
+    this.tui.requestRender(true);
+  }
+
+  private cycleReverseSearch(): void {
+    if (this.reverseSearch === null) return;
+    const index = this.findReverseSearchMatch(
+      this.reverseSearch.query,
+      this.reverseSearch.matchIndex,
+    );
+    if (index !== -1) {
+      this.reverseSearch.matchIndex = index;
+      this.tui.requestRender(true);
+    }
+  }
+
+  private appendReverseSearchQuery(ch: string): void {
+    if (this.reverseSearch === null) return;
+    this.reverseSearch.query += ch;
+    this.reverseSearch.matchIndex = -1;
+    this.setText(this.reverseSearch.query);
+    this.updateReverseSearchMatch();
+  }
+
+  private backspaceReverseSearchQuery(): void {
+    if (this.reverseSearch === null) return;
+    if (this.reverseSearch.query.length === 0) return;
+    this.reverseSearch.query = this.reverseSearch.query.slice(0, -1);
+    this.reverseSearch.matchIndex = -1;
+    this.setText(this.reverseSearch.query);
+    this.updateReverseSearchMatch();
+  }
+
+  private acceptReverseSearch(): void {
+    if (this.reverseSearch === null) return;
+    const { matchIndex, originalMode } = this.reverseSearch;
+    const entries = super.getHistoryEntries();
+    const raw = entries[matchIndex];
+    this.reverseSearch = null;
+    if (raw === undefined) {
+      this.setText('');
+      this.tui.requestRender(true);
+      return;
+    }
+    // Mirror history recall: a bash entry accepted from prompt mode switches
+    // to bash and drops the leading `!`.
+    if (originalMode === 'prompt' && raw.startsWith('!')) {
+      this.setInputMode('bash');
+      this.setText(raw.slice(1));
+    } else {
+      this.setText(this.formatReverseSearchEntry(raw, originalMode));
+    }
+    this.tui.requestRender(true);
+  }
+
+  private cancelReverseSearch(): void {
+    if (this.reverseSearch === null) return;
+    const { originalText, originalMode } = this.reverseSearch;
+    this.reverseSearch = null;
+    this.inputMode = originalMode;
+    this.setText(originalText);
+    this.tui.requestRender(true);
   }
 
   override handleInput(data: string): void {
@@ -433,6 +569,45 @@ export class CustomEditor extends Editor {
         );
         return;
       }
+    }
+
+    // Reverse-i-search: query editing and lifecycle.
+    if (this.reverseSearch !== null) {
+      if (matchesKey(normalized, Key.ctrl('r'))) {
+        this.cycleReverseSearch();
+        return;
+      }
+      if (matchesKey(normalized, Key.enter)) {
+        this.acceptReverseSearch();
+        return;
+      }
+      if (
+        matchesKey(normalized, Key.escape) ||
+        matchesKey(normalized, Key.ctrl('c')) ||
+        matchesKey(normalized, Key.ctrl('g'))
+      ) {
+        this.cancelReverseSearch();
+        return;
+      }
+      if (matchesKey(normalized, Key.backspace)) {
+        this.backspaceReverseSearchQuery();
+        return;
+      }
+      const ch = printableChar(normalized);
+      if (isPrintableChar(ch)) {
+        this.appendReverseSearchQuery(ch);
+        return;
+      }
+      // Ignore other keys while searching.
+      return;
+    }
+
+    if (matchesKey(normalized, Key.ctrl('r'))) {
+      if (this.hasAutocompleteActivity()) {
+        this.cancelAutocompleteActivity();
+      }
+      this.startReverseSearch();
+      return;
     }
 
     if (matchesKey(normalized, Key.ctrl('d'))) {
