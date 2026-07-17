@@ -203,6 +203,11 @@ export class EditorKeyboardController {
         this.clearPendingUndoEsc();
         return;
       }
+      if (host.state.appState.isCompacting) {
+        this.cancelCurrentCompaction();
+        this.clearPendingUndoEsc();
+        return;
+      }
       if (host.shellEvalPanelController.closeOrCancel()) {
         this.clearPendingUndoEsc();
         return;
