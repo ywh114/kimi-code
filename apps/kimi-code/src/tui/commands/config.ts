@@ -25,6 +25,7 @@ import { currentTheme, isBuiltInTheme, lightColors, loadCustomThemeMerged } from
 import { NO_ACTIVE_SESSION_MESSAGE } from '../constant/kimi-tui';
 import { formatErrorMessage } from '../utils/event-payload';
 import { thinkingEffortToConfig } from '../utils/thinking-config';
+import { formatTokenCount } from '../../utils/usage/usage-format';
 import { showUsage } from './info';
 import { setExperimentalFeatures } from './experimental-flags';
 import type { SlashCommandHost } from './dispatch';
@@ -34,6 +35,11 @@ import type { SlashCommandHost } from './dispatch';
 // ---------------------------------------------------------------------------
 
 const MODEL_PICKER_REFRESH_TIMEOUT_MS = 2_000;
+/** Floor for `/context-max`; compaction reserves ~50k, so anything smaller is useless. */
+const MIN_CONTEXT_MAX_TOKENS = 65_536;
+/** Mirrors agent-core DefaultCompactionStrategy (reserved 50k, ratio 0.85). */
+const COMPACTION_RESERVED_TOKENS = 50_000;
+const COMPACTION_TRIGGER_RATIO = 0.85;
 
 function currentTuiConfig(host: SlashCommandHost): TuiConfig {
   return {
@@ -232,6 +238,116 @@ export async function handleModelCommand(host: SlashCommandHost, args: string): 
   showModelPicker(host, alias);
 }
 
+/** Parse a `/context-max` argument: `262144`, `256k`, `1M` (case-insensitive). */
+export function parseContextMaxTokens(arg: string): number | undefined {
+  const m = /^(\d+(?:\.\d+)?)([km])?$/i.exec(arg.trim());
+  if (m === null) return undefined;
+  const value = Number(m[1]);
+  if (!Number.isFinite(value)) return undefined;
+  const unit = m[2]?.toLowerCase();
+  const mult = unit === 'k' ? 1_000 : unit === 'm' ? 1_000_000 : 1;
+  return Math.round(value * mult);
+}
+
+/** Auto-compaction threshold for a context cap (mirrors agent-core's strategy). */
+function contextCompactTrigger(cap: number): number {
+  return Math.min(cap * COMPACTION_TRIGGER_RATIO, cap - COMPACTION_RESERVED_TOKENS);
+}
+
+export async function handleContextMaxCommand(host: SlashCommandHost, args: string): Promise<void> {
+  const alias = host.state.appState.model;
+  const model = host.state.appState.availableModels[alias];
+  if (model === undefined) {
+    host.showError('No model selected. Run /model to select one first.');
+    return;
+  }
+  const baseMax = model.maxContextSize;
+  const currentMax = host.state.appState.maxContextTokens || baseMax;
+  const arg = args.trim().toLowerCase();
+
+  if (arg.length === 0) {
+    host.showStatus(
+      `Context max for ${alias}: ${formatTokenCount(currentMax)} (auto-compact at ~${formatTokenCount(contextCompactTrigger(currentMax))}, model default ${formatTokenCount(baseMax)}). Set with /context-max <tokens|reset>.`,
+    );
+    return;
+  }
+
+  if (host.state.appState.streamingPhase !== 'idle') {
+    host.showError('Cannot change context max while streaming — press Ctrl-C first.');
+    return;
+  }
+
+  if (arg === 'reset') {
+    await applyContextMax(host, alias, model, baseMax, '');
+    return;
+  }
+
+  const parsed = parseContextMaxTokens(arg);
+  if (parsed === undefined) {
+    host.showError(`Invalid context max "${args.trim()}" — use e.g. 262144, 256k, 1M, or reset.`);
+    return;
+  }
+  if (parsed < MIN_CONTEXT_MAX_TOKENS) {
+    host.showError(
+      `Context max must be at least ${formatTokenCount(MIN_CONTEXT_MAX_TOKENS)} (auto-compaction reserves ~${formatTokenCount(COMPACTION_RESERVED_TOKENS)}).`,
+    );
+    return;
+  }
+  const clamped = Math.min(parsed, baseMax);
+  const note =
+    clamped === parsed
+      ? ''
+      : ` Clamped to the model's context window (${formatTokenCount(baseMax)}).`;
+  await applyContextMax(host, alias, model, clamped, note);
+}
+
+async function applyContextMax(
+  host: SlashCommandHost,
+  alias: string,
+  model: ModelAlias,
+  value: number,
+  note: string,
+): Promise<void> {
+  // Write the full alias entry (not just the override) so the patch stays valid
+  // even when the alias is not yet present in config.toml. `overrides` is
+  // preserved across managed-model catalog refreshes.
+  const { overrides: existingOverrides, ...aliasFields } = model;
+  try {
+    await host.harness.setConfig({
+      models: {
+        [alias]: {
+          ...aliasFields,
+          overrides: { ...existingOverrides, maxContextSize: value },
+        },
+      },
+    });
+  } catch (error) {
+    host.showError(`Failed to set context max: ${formatErrorMessage(error)}`);
+    return;
+  }
+
+  // ProviderManager reads config live, so the new cap is effective immediately;
+  // refresh the footer gauge right away instead of waiting for a status event.
+  const session = host.session;
+  if (session !== undefined) {
+    try {
+      const status = await session.getStatus();
+      host.setAppState({
+        maxContextTokens: status.maxContextTokens,
+        contextTokens: status.contextTokens,
+        contextUsage: status.contextUsage,
+      });
+    } catch {
+      // The gauge refreshes on the next agent.status.updated event.
+    }
+  }
+
+  host.showStatus(
+    `Context max for ${alias} set to ${formatTokenCount(value)} (auto-compact at ~${formatTokenCount(contextCompactTrigger(value))}); saved to config.toml.${note}`,
+    'success',
+  );
+}
+
 export async function handleEffortCommand(host: SlashCommandHost, args: string): Promise<void> {
   const alias = host.state.appState.model;
   const model = host.state.appState.availableModels[alias];
@@ -414,7 +530,7 @@ async function performModelSwitch(
   persist: boolean,
 ): Promise<void> {
   if (host.state.appState.streamingPhase !== 'idle') {
-    host.showError('Cannot switch models while streaming — press Esc or Ctrl-C first.');
+    host.showError('Cannot switch models while streaming — press Ctrl-C first.');
     return;
   }
 

@@ -441,6 +441,14 @@ export class Editor implements Component, Focusable {
 		}
 	}
 
+	/**
+	 * Return a snapshot of the current prompt history, oldest last.
+	 * Exposed so hosts can implement reverse-i-search.
+	 */
+	getHistoryEntries(): readonly string[] {
+		return [...this.history];
+	}
+
 	private isEditorEmpty(): boolean {
 		return this.state.lines.length === 1 && this.state.lines[0] === "";
 	}

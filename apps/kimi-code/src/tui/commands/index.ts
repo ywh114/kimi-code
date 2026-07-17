@@ -11,6 +11,7 @@ export { handleLoginCommand, handleLogoutCommand } from './auth';
 export { handleBtwCommand } from './btw';
 export {
   handleCompactCommand,
+  handleContextMaxCommand,
   handleEditorCommand,
   handleModelCommand,
   handlePlanCommand,

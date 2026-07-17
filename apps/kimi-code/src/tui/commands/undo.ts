@@ -46,7 +46,7 @@ export async function handleUndoCommand(
   args: string = '',
 ): Promise<void> {
   if (host.state.appState.streamingPhase !== 'idle') {
-    host.showError('Cannot undo while streaming — press Esc or Ctrl-C first.');
+    host.showError('Cannot undo while streaming — press Ctrl-C first.');
     return;
   }
 

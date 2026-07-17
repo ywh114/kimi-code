@@ -858,6 +858,139 @@ describe('CustomEditor bash mode file completion', () => {
   });
 });
 
+describe('CustomEditor reverse-i-search', () => {
+  // oxlint-disable-next-line no-control-regex -- ESC (\u001B) is required to match ANSI SGR escape sequences
+  const stripAnsi = (s: string): string => s.replaceAll(/\u001B\[[0-9;]*m/g, '');
+  const CTRL_R = '\u0012';
+
+  it('starts reverse-i-search and shows the most recent history entry', () => {
+    const editor = makeEditor();
+    editor.addToHistory('first hello');
+    editor.addToHistory('second hello world');
+    editor.addToHistory('third goodbye');
+
+    editor.handleInput(CTRL_R);
+
+    const content = stripAnsi(editor.render(90)[1] ?? '');
+    expect(content.startsWith('? ')).toBe(true);
+    expect(editor.getText()).toBe('');
+    expect(content).toContain('third goodbye');
+  });
+
+  it('uses the current buffer as the initial search query', () => {
+    const editor = makeEditor();
+    editor.addToHistory('apple pie');
+    editor.addToHistory('banana bread');
+
+    for (const char of 'bread') {
+      editor.handleInput(char);
+    }
+    editor.handleInput(CTRL_R);
+
+    expect(editor.getText()).toBe('bread');
+    const content = stripAnsi(editor.render(90)[1] ?? '');
+    expect(content).toContain('banana bread');
+  });
+
+  it('cycles to older matches with repeated Ctrl+R', () => {
+    const editor = makeEditor();
+    editor.addToHistory('old match');
+    editor.addToHistory('new match');
+
+    editor.handleInput(CTRL_R);
+    expect(stripAnsi(editor.render(90)[1] ?? '')).toContain('new match');
+
+    editor.handleInput(CTRL_R);
+    expect(stripAnsi(editor.render(90)[1] ?? '')).toContain('old match');
+  });
+
+  it('appends typed characters to the search query', () => {
+    const editor = makeEditor();
+    editor.addToHistory('hello world');
+    editor.addToHistory('hello there');
+
+    editor.handleInput(CTRL_R);
+    for (const char of 'world') {
+      editor.handleInput(char);
+    }
+
+    expect(editor.getText()).toBe('world');
+    expect(stripAnsi(editor.render(90)[1] ?? '')).toContain('hello world');
+  });
+
+  it('accepts the current match with Enter and exits search', () => {
+    const editor = makeEditor();
+    editor.addToHistory('recall this');
+
+    editor.handleInput(CTRL_R);
+    editor.handleInput('\r');
+
+    expect(editor.getText()).toBe('recall this');
+    expect(stripAnsi(editor.render(90)[1] ?? '').startsWith('> ')).toBe(true);
+  });
+
+  it('cancels search with Escape and restores the original input', () => {
+    const editor = makeEditor();
+    editor.addToHistory('do not use');
+
+    for (const char of 'original') {
+      editor.handleInput(char);
+    }
+    editor.handleInput(CTRL_R);
+    for (const char of 'query') {
+      editor.handleInput(char);
+    }
+    editor.handleInput('\u001B');
+
+    expect(editor.getText()).toBe('original');
+    expect(editor.inputMode).toBe('prompt');
+  });
+
+  it('limits bash-mode search to shell history entries and strips the leading !', () => {
+    const editor = makeEditor();
+    editor.addToHistory('plain text');
+    editor.addToHistory('!ls -la');
+    editor.addToHistory('!cat file');
+
+    editor.handleInput('!'); // enter bash mode
+    editor.handleInput(CTRL_R);
+
+    const first = stripAnsi(editor.render(90)[1] ?? '');
+    expect(first).toContain('cat file');
+    expect(first).not.toContain('!cat');
+
+    editor.handleInput(CTRL_R);
+    expect(stripAnsi(editor.render(90)[1] ?? '')).toContain('ls -la');
+
+    editor.handleInput('\r');
+    expect(editor.getText()).toBe('ls -la');
+    expect(editor.inputMode).toBe('bash');
+  });
+
+  it('recalling a bash entry from prompt mode switches to bash mode', () => {
+    const editor = makeEditor();
+    editor.addToHistory('!echo hi');
+
+    editor.handleInput(CTRL_R);
+    editor.handleInput('\r');
+
+    expect(editor.inputMode).toBe('bash');
+    expect(editor.getText()).toBe('echo hi');
+  });
+
+  it('shows a no-match hint when the query matches nothing', () => {
+    const editor = makeEditor();
+    editor.addToHistory('something');
+
+    editor.handleInput(CTRL_R);
+    for (const char of 'xyz') {
+      editor.handleInput(char);
+    }
+
+    expect(stripAnsi(editor.render(90)[1] ?? '')).toContain('(no match)');
+  });
+});
+
 describe('CustomEditor full re-render on autocomplete close', () => {
   function makeEditorWithRenderSpy(contentLines: number): {
     editor: CustomEditor;

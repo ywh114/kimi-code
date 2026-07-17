@@ -28,6 +28,7 @@ describe('HelpPanelComponent', () => {
     expect(out).toMatch(/Ctrl-O/);
     expect(out).toMatch(/Ctrl-Y/);
     expect(out).toMatch(/Ctrl-X/);
+    expect(out).toMatch(/Ctrl-R/);
     expect(out).toMatch(/Shift-Enter \/ Ctrl-J/);
     expect(out).toMatch(/Slash commands/);
     expect(out).toMatch(/\/exit \(\/quit, \/q\)/);

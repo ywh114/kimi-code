@@ -38,6 +38,7 @@ export const DEFAULT_KEYBOARD_SHORTCUTS: readonly KeyboardShortcut[] = [
   { keys: 'Ctrl-T', description: 'Expand / collapse the todo list (when truncated)' },
   { keys: 'Ctrl-S', description: 'Steer — inject a follow-up during streaming' },
   { keys: 'Ctrl-X', description: 'Toggle shell input mode' },
+  { keys: 'Ctrl-R', description: 'Reverse-i-search input history' },
   { keys: 'Shift-Enter / Ctrl-J', description: 'Insert newline' },
   { keys: 'Ctrl-C', description: 'Interrupt stream / clear input' },
   { keys: 'Ctrl-D', description: 'Exit (on empty input)' },
@@ -53,6 +54,9 @@ export interface HelpPanelOptions {
   /** Terminal height — used to decide whether to show the hint tail. */
   readonly maxVisible?: number;
 }
+
+/** Default max visible content lines; bumped to fit the full shortcut list. */
+const DEFAULT_MAX_VISIBLE = 26;
 
 export class HelpPanelComponent extends Container implements Focusable {
   focused = false;
@@ -130,7 +134,7 @@ export class HelpPanelComponent extends Container implements Focusable {
 
     // Apply scroll windowing — keep the borders visible.
     const content = lines.slice(1, lines.length - 1);
-    const maxVisible = Math.max(5, this.opts.maxVisible ?? 24);
+    const maxVisible = Math.max(5, this.opts.maxVisible ?? DEFAULT_MAX_VISIBLE);
     if (content.length > maxVisible) {
       this.scrollTop = Math.max(0, Math.min(this.scrollTop, content.length - maxVisible));
       const slice = content.slice(this.scrollTop, this.scrollTop + maxVisible);

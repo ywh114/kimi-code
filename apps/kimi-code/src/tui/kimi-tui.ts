@@ -1737,7 +1737,7 @@ export class KimiTUI {
       return true;
     }
     if (this.state.appState.streamingPhase !== 'idle') {
-      this.showError('Cannot switch sessions while streaming — press Esc or Ctrl-C first.');
+      this.showError('Cannot switch sessions while streaming — press Ctrl-C first.');
       return false;
     }
     if (this.state.appState.isReplaying) {

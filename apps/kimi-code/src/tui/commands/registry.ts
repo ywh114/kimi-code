@@ -30,6 +30,14 @@ const ADD_DIR_ARG_COMPLETIONS: readonly ArgCompletionSpec[] = [
   { value: 'list', description: 'Show configured additional workspace directories' },
 ];
 
+const CONTEXT_MAX_ARG_COMPLETIONS: readonly ArgCompletionSpec[] = [
+  { value: 'reset', description: 'Restore the model default context window' },
+  { value: '128k', description: 'Cap context at 128k tokens' },
+  { value: '256k', description: 'Cap context at 256k tokens' },
+  { value: '512k', description: 'Cap context at 512k tokens' },
+  { value: '1M', description: 'Cap context at 1M tokens' },
+];
+
 /** Argument autocompletion for the `/goal` command (subcommands). */
 export function goalArgumentCompletions(argumentPrefix: string): AutocompleteItem[] | null {
   const nextMatch = argumentPrefix.match(/^next\s+(\S*)$/i);
@@ -47,6 +55,11 @@ export function goalArgumentCompletions(argumentPrefix: string): AutocompleteIte
 /** Argument autocompletion for the `/swarm` command (subcommands). */
 export function swarmArgumentCompletions(argumentPrefix: string): AutocompleteItem[] | null {
   return completeLeadingArg(SWARM_ARG_COMPLETIONS, argumentPrefix);
+}
+
+/** Argument autocompletion for the `/context-max` command. */
+export function contextMaxArgumentCompletions(argumentPrefix: string): AutocompleteItem[] | null {
+  return completeLeadingArg(CONTEXT_MAX_ARG_COMPLETIONS, argumentPrefix);
 }
 
 /** Argument autocompletion for the `/add-dir` command. */
@@ -190,6 +203,15 @@ export const BUILTIN_SLASH_COMMANDS = [
     description: 'Switch thinking effort',
     priority: 95,
     availability: 'always',
+  },
+  {
+    name: 'context-max',
+    aliases: [],
+    description: 'Set max context tokens for the current model',
+    priority: 95,
+    availability: 'always',
+    argumentHint: '<tokens|reset>',
+    completeArgs: contextMaxArgumentCompletions,
   },
   {
     name: 'provider',

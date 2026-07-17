@@ -3,8 +3,8 @@
  * Supports live in-place updates while thinking streams, then finalizes
  * without replacing the component.
  *
- * Live (streaming) thinking can be expanded/collapsed with Ctrl+E.
- * Finalized thinking is always shown in full; Ctrl+E does not affect it.
+ * Live (streaming) thinking can be expanded/collapsed with Ctrl+Y.
+ * Finalized thinking is always shown in full; Ctrl+Y does not affect it.
  */
 
 import { Text, truncateToWidth, type Component, type TUI } from '@moonshot-ai/pi-tui';
