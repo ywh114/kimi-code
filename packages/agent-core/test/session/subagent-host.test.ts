@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { Agent, AgentOptions } from '../../src/agent';
 import { AGENT_WIRE_PROTOCOL_VERSION } from '../../src/agent/records';
+import type { KimiConfig } from '../../src/config/schema';
 import type { ResolvedAgentProfile } from '../../src/profile';
 import type { SDKSessionRPC } from '../../src/rpc';
 import { Session } from '../../src/session';
@@ -16,6 +17,7 @@ import {
   DEFAULT_SUBAGENT_TIMEOUT_MS,
   SessionSubagentHost,
   formatSubagentTimeoutDescription,
+  resolveSubagentModelAlias,
   resolveSubagentTimeoutMs,
   type QueuedSubagentTask,
 } from '../../src/session/subagent-host';
@@ -89,6 +91,27 @@ describe('formatSubagentTimeoutDescription', () => {
     expect(formatSubagentTimeoutDescription(2 * 60 * 60 * 1000)).toBe('2 hours');
     expect(formatSubagentTimeoutDescription(45 * 1000)).toBe('45 seconds');
     expect(formatSubagentTimeoutDescription(1500)).toBe('1500 ms');
+  });
+});
+
+describe('resolveSubagentModelAlias', () => {
+  const config = configWithSubagentModels({ coder: 'cheap-model', broken: 'missing-model' });
+
+  it('inherits the parent alias when no override is configured', () => {
+    expect(resolveSubagentModelAlias(config, 'explore', 'parent-model')).toBe('parent-model');
+    expect(resolveSubagentModelAlias(undefined, 'coder', 'parent-model')).toBe('parent-model');
+  });
+
+  it('uses the configured override for the profile', () => {
+    expect(resolveSubagentModelAlias(config, 'coder', 'parent-model')).toBe('cheap-model');
+  });
+
+  it('falls back to the parent alias and warns for an unconfigured override', () => {
+    const warn = vi.fn();
+    expect(resolveSubagentModelAlias(config, 'broken', 'parent-model', { warn })).toBe(
+      'parent-model',
+    );
+    expect(warn).toHaveBeenCalledOnce();
   });
 });
 
@@ -368,6 +391,134 @@ describe('SessionSubagentHost', () => {
         content: [{ type: 'text', text: 'Find the cause' }],
       },
     ]);
+  });
+
+  it('runs a subagent on the model configured for its profile in subagent.models', async () => {
+    const initialConfig = configWithSubagentModels({ coder: 'cheap-model' });
+    const parent = testAgent({ initialConfig });
+    parent.configure();
+    parent.newEvents();
+
+    const summary =
+      'Implemented the delegated fix end to end, verified the change against the existing test suite, and returned a detailed enough summary for the parent agent to continue without repeating the work. '.repeat(
+        2,
+      );
+    const child = testAgent({ initialConfig });
+    child.mockNextResponse({ type: 'text', text: summary });
+    const session = fakeSession(parent.agent, child.agent);
+    const host = new SessionSubagentHost(session, 'main');
+
+    const handle = await host.spawn({
+      profileName: 'coder',
+      parentToolCallId: 'call_agent',
+      prompt: 'Implement the fix',
+      description: 'Fix bug',
+      runInBackground: false,
+      signal,
+    });
+    await handle.completion;
+
+    expect(child.agent.config.modelAlias).toBe('cheap-model');
+    expect(parent.agent.config.modelAlias).toBe('mock-model');
+  });
+
+  it('keeps parent model inheritance for profiles without a subagent.models entry', async () => {
+    const initialConfig = configWithSubagentModels({ coder: 'cheap-model' });
+    const parent = testAgent({ initialConfig });
+    parent.configure();
+    parent.newEvents();
+
+    const summary =
+      'Explored the codebase end to end and reported the findings in a complete and detailed summary that gives the parent agent everything it needs to continue the work without redoing the investigation. '.repeat(
+        2,
+      );
+    const child = testAgent({ initialConfig });
+    child.mockNextResponse({ type: 'text', text: summary });
+    const session = fakeSession(parent.agent, child.agent);
+    const host = new SessionSubagentHost(session, 'main');
+
+    const handle = await host.spawn({
+      profileName: 'explore',
+      parentToolCallId: 'call_agent',
+      prompt: 'Find the cause',
+      description: 'Find cause',
+      runInBackground: false,
+      signal,
+    });
+    await handle.completion;
+
+    expect(child.agent.config.modelAlias).toBe('mock-model');
+  });
+
+  it('falls back to the parent model when subagent.models names an unconfigured alias', async () => {
+    const initialConfig = configWithSubagentModels({ coder: 'missing-model' });
+    const parent = testAgent({ initialConfig });
+    parent.configure();
+    parent.newEvents();
+
+    const summary =
+      'Implemented the delegated fix end to end with the parent model as fallback, verified the change, and returned a detailed enough summary for the parent agent to continue without repeating work. '.repeat(
+        2,
+      );
+    const child = testAgent({ initialConfig });
+    child.mockNextResponse({ type: 'text', text: summary });
+    const session = fakeSession(parent.agent, child.agent);
+    const host = new SessionSubagentHost(session, 'main');
+
+    const handle = await host.spawn({
+      profileName: 'coder',
+      parentToolCallId: 'call_agent',
+      prompt: 'Implement the fix',
+      description: 'Fix bug',
+      runInBackground: false,
+      signal,
+    });
+    await handle.completion;
+
+    expect(child.agent.config.modelAlias).toBe('mock-model');
+  });
+
+  it('realigns a resumed subagent to its profile model override', async () => {
+    const initialConfig = configWithSubagentModels({ explore: 'cheap-model' });
+    const parent = testAgent({ initialConfig });
+    parent.configure();
+    parent.agent.permission.setMode('yolo');
+
+    const child = testAgent({
+      type: 'sub',
+      initialConfig,
+      permission: { parent: parent.agent.permission },
+    });
+    child.configure({ tools: ['Read'] });
+    child.agent.useProfile(
+      profile({ name: 'explore', tools: ['Read'], systemPrompt: 'explore prompt' }),
+    );
+    child.agent.context.appendUserMessage([{ type: 'text', text: 'Earlier context' }]);
+    child.mockNextResponse({
+      type: 'text',
+      text: 'Resumed the subagent from its earlier context and carried the task through to completion, then reported a full and detailed technical summary so the parent agent can continue without repeating prior work.',
+    });
+    vi.mocked(collectGitContext).mockReset().mockResolvedValue('');
+
+    const session = fakeSession(parent.agent, child.agent, {
+      'agent-0': {
+        homedir: '/tmp/kimi-session/agents/agent-0',
+        type: 'sub',
+        parentAgentId: 'main',
+      },
+    });
+    const host = new SessionSubagentHost(session, 'main');
+
+    const handle = await host.resume('agent-0', {
+      parentToolCallId: 'call_agent',
+      prompt: 'Continue from context',
+      description: 'Continue work',
+      runInBackground: false,
+      signal,
+    });
+    await handle.completion;
+
+    expect(child.agent.config.modelAlias).toBe('cheap-model');
   });
 
   it('inherits active parent user tools when spawning a subagent', async () => {
@@ -1660,6 +1811,33 @@ function profile(input: {
     systemPrompt: () => input.systemPrompt,
     tools: [...input.tools],
     subagents: input.subagents,
+  };
+}
+
+/**
+ * A config with a second model alias (`cheap-model`) on the harness's
+ * `test-provider`, plus a `[subagent.models]` profile → alias map. Passed as
+ * `initialConfig` to both parent and child test agents so the child's
+ * provider manager can resolve the override alias.
+ */
+function configWithSubagentModels(subagentModels: Record<string, string>): KimiConfig {
+  return {
+    providers: {
+      'test-provider': { type: 'kimi', apiKey: 'test-key' },
+    },
+    models: {
+      'mock-model': {
+        provider: 'test-provider',
+        model: 'mock-model',
+        maxContextSize: 1_000_000,
+      },
+      'cheap-model': {
+        provider: 'test-provider',
+        model: 'cheap-model',
+        maxContextSize: 1_000_000,
+      },
+    },
+    subagent: { models: subagentModels },
   };
 }
 

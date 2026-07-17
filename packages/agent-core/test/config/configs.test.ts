@@ -939,6 +939,39 @@ support_efforts = ["low", "high"]
   });
 });
 
+describe('subagent models TOML', () => {
+  it('parses [subagent.models] profile overrides', () => {
+    const config = parseConfigString(`
+[subagent]
+timeout_ms = 600000
+
+[subagent.models]
+coder = "kimi-code/kimi-for-coding"
+explore = "kimi-code/kimi-for-coding"
+`);
+
+    expect(config.subagent).toEqual({
+      timeoutMs: 600000,
+      models: {
+        coder: 'kimi-code/kimi-for-coding',
+        explore: 'kimi-code/kimi-for-coding',
+      },
+    });
+  });
+
+  it('writes subagent models back as a nested TOML table', () => {
+    const config = parseConfigString(`
+[subagent.models]
+coder = "kimi-code/kimi-for-coding"
+`);
+
+    const data = configToTomlData(config);
+    const subagent = data['subagent'] as Record<string, unknown>;
+
+    expect(subagent['models']).toEqual({ coder: 'kimi-code/kimi-for-coding' });
+  });
+});
+
 describe('applyPrintModeConfigDefaults', () => {
   it('fills unbounded print defaults when nothing is configured', () => {
     const config = applyPrintModeConfigDefaults({ providers: {} });

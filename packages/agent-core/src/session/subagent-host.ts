@@ -6,6 +6,7 @@ import {
 
 import type { Agent } from '../agent';
 import type { PromptOrigin } from '../agent/context';
+import type { KimiConfig } from '../config/schema';
 import { ErrorCodes } from '../errors';
 import { DenyAllPermissionPolicy } from '../agent/permission/policies/deny-all';
 import { InMemoryAgentRecordPersistence } from '../agent/records';
@@ -69,6 +70,31 @@ export function formatSubagentTimeoutDescription(ms: number): string {
     return `${s} second${s === 1 ? '' : 's'}`;
   }
   return `${ms} ms`;
+}
+
+/**
+ * Resolve the model alias a subagent for `profileName` should run. A
+ * `[subagent.models]` entry overrides the parent agent's model, but only
+ * when it names an alias configured in `[models]` — an unconfigured alias
+ * would fail the subagent's first turn with an unknown-model error, so it
+ * falls back to the parent model with a warning instead.
+ */
+export function resolveSubagentModelAlias(
+  kimiConfig: KimiConfig | undefined,
+  profileName: string,
+  parentModelAlias: string | undefined,
+  log?: { warn(message: string, context?: Record<string, unknown>): void },
+): string | undefined {
+  const override = kimiConfig?.subagent?.models?.[profileName];
+  if (override === undefined) return parentModelAlias;
+  if (kimiConfig?.models?.[override] === undefined) {
+    log?.warn(
+      `Subagent model "${override}" for profile "${profileName}" is not configured in [models]; using the parent agent's model.`,
+      { profileName, subagentModel: override, parentModelAlias },
+    );
+    return parentModelAlias;
+  }
+  return override;
 }
 
 export type {
@@ -182,7 +208,14 @@ export class SessionSubagentHost {
     const completion = this.runWithActiveChild(agentId, options, async (runOptions) => {
       this.emitSubagentSpawned(parent, agentId, profileName, runOptions);
       try {
-        child.config.update({ modelAlias: parent.config.modelAlias });
+        child.config.update({
+          modelAlias: resolveSubagentModelAlias(
+            parent.kimiConfig,
+            profileName,
+            parent.config.modelAlias,
+            parent.log,
+          ),
+        });
         return await this.runPromptTurn(parent, agentId, child, profileName, runOptions);
       } catch (error) {
         this.emitSubagentFailed(parent, agentId, runOptions, error);
@@ -198,7 +231,14 @@ export class SessionSubagentHost {
     const completion = this.runWithActiveChild(agentId, options, async (runOptions) => {
       try {
         runOptions.signal.throwIfAborted();
-        child.config.update({ modelAlias: parent.config.modelAlias });
+        child.config.update({
+          modelAlias: resolveSubagentModelAlias(
+            parent.kimiConfig,
+            profileName,
+            parent.config.modelAlias,
+            parent.log,
+          ),
+        });
         this.emitSubagentStarted(parent, agentId);
         const turnId = child.turn.retry('agent-host');
         if (turnId === null) {
@@ -400,10 +440,16 @@ export class SessionSubagentHost {
     child: Agent,
     profile: ResolvedAgentProfile,
   ): Promise<void> {
-    // A subagent always inherits the parent agent's model.
+    // A subagent inherits the parent agent's model unless its profile has a
+    // `[subagent.models]` override (see resolveSubagentModelAlias).
     child.config.update({
       cwd: parent.config.cwd,
-      modelAlias: parent.config.modelAlias,
+      modelAlias: resolveSubagentModelAlias(
+        parent.kimiConfig,
+        profile.name,
+        parent.config.modelAlias,
+        parent.log,
+      ),
       thinkingEffort: parent.config.thinkingEffort,
     });
 

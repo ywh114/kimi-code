@@ -154,6 +154,14 @@ export const SubagentConfigSchema = z.object({
    * in milliseconds. `0` means no timeout. Defaults to 2 hours when unset.
    */
   timeoutMs: z.number().int().min(0).optional(),
+  /**
+   * Per-profile model overrides (`[subagent.models]` in config.toml). Keys
+   * are subagent profile names (`coder`, `explore`, `plan`); values must be
+   * aliases configured in `[models]`. Profiles without an entry inherit the
+   * parent agent's model; an entry naming an unconfigured alias is ignored
+   * with a warning.
+   */
+  models: z.record(z.string(), z.string()).optional(),
 });
 
 export type SubagentConfig = z.infer<typeof SubagentConfigSchema>;
