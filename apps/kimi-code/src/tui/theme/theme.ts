@@ -13,6 +13,14 @@ import chalk from 'chalk';
 import type { ColorPalette } from './colors';
 import { darkColors } from './colors';
 
+// Fork patch: force truecolor output when attached to a terminal. chalk's
+// auto-detection downgrades to 256-color approximations when COLORTERM is
+// unset (e.g. inside tmux with TERM=screen/tmux-256color), which flattens
+// custom theme hexes into muddy 256-cube colors (thinking gray -> khaki).
+if (process.stdout.isTTY) {
+  chalk.level = 3;
+}
+
 export type ColorToken = keyof ColorPalette;
 
 export class Theme {
