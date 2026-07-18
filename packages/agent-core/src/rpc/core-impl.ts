@@ -88,6 +88,7 @@ import type {
   CompleteGlobalMcpServerAuthPayload,
   ConfigDiagnostics,
   CoreAPI,
+  DeleteSessionPayload,
   CoreInfo,
   CreateGoalPayload,
   CreateSessionPayload,

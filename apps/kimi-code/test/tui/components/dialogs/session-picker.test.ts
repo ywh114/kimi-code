@@ -709,4 +709,81 @@ describe('SessionPickerComponent', () => {
     expect(onToggleScope).toHaveBeenCalledOnce();
     expect(onToggleScope).toHaveBeenCalledWith('ses_beta');
   });
+
+  describe('session deletion', () => {
+    const CTRL_K = '\u000B';
+
+    function makePicker(overrides: { currentSessionId?: string } = {}) {
+      const onDelete = vi.fn();
+      const component = new SessionPickerComponent({
+        sessions: [
+          {
+            id: 'ses_alpha',
+            title: 'Alpha session',
+            work_dir: '/tmp/project',
+            updated_at: 1,
+          },
+          {
+            id: 'ses_beta',
+            title: 'Beta session',
+            work_dir: '/tmp/project',
+            updated_at: 2,
+          },
+        ],
+        loading: false,
+        currentSessionId: overrides.currentSessionId ?? 'ses_other',
+        onSelect: vi.fn(),
+        onCancel: vi.fn(),
+        onDelete,
+      });
+      return { component, onDelete };
+    }
+
+    it('shows a Ctrl+K delete hint in the hint line', () => {
+      const { component } = makePicker();
+      expect(renderPlain(component)).toContain('Ctrl+K delete');
+    });
+
+    it('arms delete on Ctrl+K and confirms on a second Ctrl+K', () => {
+      const { component, onDelete } = makePicker();
+
+      component.handleInput(CTRL_K);
+      expect(renderPlain(component)).toContain('Delete "Alpha session"?');
+      expect(onDelete).not.toHaveBeenCalled();
+
+      component.handleInput(CTRL_K);
+      expect(onDelete).toHaveBeenCalledWith(expect.objectContaining({ id: 'ses_alpha' }));
+    });
+
+    it('cancels an armed delete on Escape', () => {
+      const { component, onDelete } = makePicker();
+
+      component.handleInput(CTRL_K);
+      component.handleInput(ESC);
+
+      expect(onDelete).not.toHaveBeenCalled();
+      expect(renderPlain(component)).not.toContain('Delete "');
+    });
+
+    it('swallows other keys while armed instead of leaking them into search', () => {
+      const { component, onDelete } = makePicker();
+
+      component.handleInput(CTRL_K);
+      component.handleInput('x');
+
+      expect(onDelete).not.toHaveBeenCalled();
+      const output = renderPlain(component);
+      expect(output).not.toContain('Delete "');
+      expect(output).not.toContain('Search: x');
+    });
+
+    it('refuses to delete the current session', () => {
+      const { component, onDelete } = makePicker({ currentSessionId: 'ses_alpha' });
+
+      component.handleInput(CTRL_K);
+
+      expect(onDelete).not.toHaveBeenCalled();
+      expect(renderPlain(component)).toContain('The current session cannot be deleted');
+    });
+  });
 });
