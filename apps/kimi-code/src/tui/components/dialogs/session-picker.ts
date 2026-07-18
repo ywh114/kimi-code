@@ -84,6 +84,9 @@ export class SessionPickerComponent extends Container implements Focusable {
   private onSelect: (session: SessionRow) => void;
   private onCancel: () => void;
   private onToggleScope?: (selectedSessionId: string) => void;
+  private onDelete?: (session: SessionRow) => void;
+  private pendingDeleteId: string | null = null;
+  private deleteNotice: string | null = null;
   private maxVisibleSessions: number;
   private pageSize: number;
   private visibleCount: number;
@@ -105,6 +108,7 @@ export class SessionPickerComponent extends Container implements Focusable {
     onCtrlC?: () => void;
     onCtrlD?: () => void;
     onToggleScope?: (selectedSessionId: string) => void;
+    onDelete?: (session: SessionRow) => void;
     maxVisibleSessions?: number;
   }) {
     super();
@@ -115,6 +119,7 @@ export class SessionPickerComponent extends Container implements Focusable {
     this.onSelect = opts.onSelect;
     this.onCancel = opts.onCancel;
     this.onToggleScope = opts.onToggleScope;
+    this.onDelete = opts.onDelete;
     this.maxVisibleSessions = opts.maxVisibleSessions ?? 4;
     this.pageSize = Math.max(1, opts.pageSize ?? 50);
     const initialIndex = this.resolveInitialSelectedIndex(opts.initialSelectedSessionId);
@@ -162,6 +167,30 @@ export class SessionPickerComponent extends Container implements Focusable {
   }
 
   handleInput(data: string): void {
+    // While a delete is armed, every key is swallowed: Ctrl+K confirms, and
+    // anything else (including Esc) cancels. Swallowing prevents a stray
+    // keystroke meant for the confirm prompt from leaking into the search
+    // query or triggering another action.
+    if (this.pendingDeleteId !== null) {
+      const pendingId = this.pendingDeleteId;
+      this.pendingDeleteId = null;
+      if (matchesKey(data, Key.ctrl('k'))) {
+        const session = this.sessions.find((entry) => entry.id === pendingId);
+        if (session !== undefined) this.onDelete?.(session);
+      }
+      return;
+    }
+    this.deleteNotice = null;
+    if (this.onDelete !== undefined && matchesKey(data, Key.ctrl('k'))) {
+      const session = this.list.selected();
+      if (session === undefined) return;
+      if (session.id === this.currentSessionId) {
+        this.deleteNotice = 'The current session cannot be deleted';
+        return;
+      }
+      this.pendingDeleteId = session.id;
+      return;
+    }
     if (matchesKey(data, Key.ctrl('c'))) {
       this.onCtrlC?.();
       return;
@@ -247,12 +276,28 @@ export class SessionPickerComponent extends Container implements Focusable {
       '↑↓ navigate',
       scopeHint,
       'Enter select',
+      ...(this.onDelete !== undefined ? ['Ctrl+K delete'] : []),
       'Esc cancel',
     ].filter((item): item is string => item !== undefined);
 
     lines.push(currentTheme.boldFg('primary', title) + titleSuffix);
     lines.push(currentTheme.fg('textMuted', hintParts.join(' · ')));
     lines.push('');
+
+    if (this.pendingDeleteId !== null) {
+      const pending = this.sessions.find((entry) => entry.id === this.pendingDeleteId);
+      const label = singleLine(((pending?.title ?? this.pendingDeleteId).trim() || this.pendingDeleteId));
+      lines.push(
+        currentTheme.fg(
+          'warning',
+          truncateToWidth(`Delete "${label}"? Ctrl+K confirm · Esc cancel`, width, ELLIPSIS),
+        ),
+      );
+      lines.push('');
+    } else if (this.deleteNotice !== null) {
+      lines.push(currentTheme.fg('warning', truncateToWidth(this.deleteNotice, width, ELLIPSIS)));
+      lines.push('');
+    }
 
     if (view.query.length > 0) {
       lines.push(currentTheme.fg('primary', 'Search: ') + currentTheme.fg('text', view.query));

@@ -172,4 +172,29 @@ describe('SessionStore', () => {
       expect(listed[0]?.workDir).toBe(workDir);
     });
   });
+
+  describe('delete', () => {
+    it('removes the session directory and drops only its index lines', async () => {
+      const deleteWorkDir = await trackWorkDir('delete');
+      const keepWorkDir = await trackWorkDir('keep');
+      await store.create({ id: 'session_delete', workDir: deleteWorkDir });
+      await store.create({ id: 'session_keep', workDir: keepWorkDir });
+
+      await store.delete('session_delete');
+
+      await expect(store.get('session_delete')).rejects.toThrow(
+        'Session "session_delete" was not found',
+      );
+      expect((await store.list({})).map((s) => s.id)).toEqual(['session_keep']);
+      const index = await readSessionIndex(homeDir, store.sessionsDir);
+      expect(index.has('session_delete')).toBe(false);
+      expect(index.has('session_keep')).toBe(true);
+    });
+
+    it('rejects deleting an unknown session', async () => {
+      await expect(store.delete('session_missing')).rejects.toThrow(
+        'Session "session_missing" was not found',
+      );
+    });
+  });
 });

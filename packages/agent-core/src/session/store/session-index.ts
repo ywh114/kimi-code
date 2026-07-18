@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'pathe';
 
 export interface SessionIndexEntry {
@@ -29,6 +29,42 @@ export async function appendSessionIndexEntry(
   const next = previous.then(async () => {
     await mkdir(dirname(indexPath), { recursive: true, mode: 0o700 });
     await appendFile(indexPath, line, 'utf-8');
+  });
+  appendQueues.set(homeDir, next.then(() => undefined, () => undefined));
+  return next;
+}
+
+/**
+ * Remove every index line for `sessionId`. The index is append-only, so
+ * deletion rewrites the file (filtered) rather than appending a tombstone.
+ * The rewrite is serialized on the same per-homeDir queue as appends so it
+ * can never interleave with a concurrent append and lose it, and is staged
+ * through a temp file + rename to keep the replace atomic. Unparseable
+ * lines are preserved; only exact `sessionId` matches are dropped.
+ */
+export async function removeSessionIndexEntry(
+  homeDir: string,
+  sessionId: string,
+): Promise<void> {
+  const indexPath = sessionIndexPath(homeDir);
+  const previous = appendQueues.get(homeDir) ?? Promise.resolve();
+  const next = previous.then(async () => {
+    let raw: string;
+    try {
+      raw = await readFile(indexPath, 'utf-8');
+    } catch {
+      return;
+    }
+    const kept: string[] = [];
+    for (const line of raw.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (trimmed === '') continue;
+      if (parseIndexLine(trimmed)?.sessionId === sessionId) continue;
+      kept.push(trimmed);
+    }
+    const tmpPath = `${indexPath}.tmp`;
+    await writeFile(tmpPath, kept.length === 0 ? '' : `${kept.join('\n')}\n`, 'utf-8');
+    await rename(tmpPath, indexPath);
   });
   appendQueues.set(homeDir, next.then(() => undefined, () => undefined));
   return next;

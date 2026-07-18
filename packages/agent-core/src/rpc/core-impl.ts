@@ -71,6 +71,7 @@ import type {
   CloseSessionPayload,
   ConfigDiagnostics,
   CoreAPI,
+  DeleteSessionPayload,
   CoreInfo,
   CreateGoalPayload,
   CreateSessionPayload,
@@ -396,6 +397,11 @@ export class KimiCore implements PromisableMethods<CoreAPI> {
   async archiveSession({ sessionId }: ArchiveSessionPayload): Promise<void> {
     await this.closeSession({ sessionId });
     await this.sessionStore.archive(sessionId);
+  }
+
+  async deleteSession({ sessionId }: DeleteSessionPayload): Promise<void> {
+    await this.closeSession({ sessionId });
+    await this.sessionStore.delete(sessionId);
   }
 
   async resumeSession(input: ResumeSessionPayload): Promise<ResumeSessionResult> {

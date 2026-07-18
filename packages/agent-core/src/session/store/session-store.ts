@@ -5,7 +5,7 @@ import { z } from 'zod';
 
 import { ErrorCodes, KimiError } from '#/errors';
 import type { SessionIndexEntry } from '#/session/store/session-index';
-import { appendSessionIndexEntry, readSessionIndex } from '#/session/store/session-index';
+import { appendSessionIndexEntry, readSessionIndex, removeSessionIndexEntry } from '#/session/store/session-index';
 import { encodeWorkDirKey, normalizeWorkDir } from '#/session/store/workdir-key';
 import type { JsonObject, ListSessionsPayload, SessionSummary } from '#/rpc/core-api';
 import { FileSystemAgentRecordPersistence, type AgentRecordOf } from '../../agent/records';
@@ -164,6 +164,12 @@ export class SessionStore {
     };
     await writeFile(statePath, `${JSON.stringify(next, null, 2)}\n`, 'utf-8');
     return this.summaryFromDir(id, entry.sessionDir, entry.workDir);
+  }
+
+  async delete(id: string): Promise<void> {
+    const entry = await this.findExistingSessionEntry(id);
+    await rm(entry.sessionDir, { recursive: true, force: true });
+    await removeSessionIndexEntry(this.homeDir, id);
   }
 
   async list(options: ListSessionsPayload = {}): Promise<readonly SessionSummary[]> {

@@ -72,6 +72,10 @@ export interface ArchiveSessionPayload {
   readonly sessionId: string;
 }
 
+export interface DeleteSessionPayload {
+  readonly sessionId: string;
+}
+
 export interface ResumeSessionPayload {
   readonly sessionId: string;
   readonly mcpServers?: Readonly<Record<string, McpServerConfig>>;
@@ -459,6 +463,7 @@ export interface CoreAPI extends SessionAPIWithId {
   createSession: (payload: CreateSessionPayload) => SessionSummary;
   closeSession: (payload: CloseSessionPayload) => void;
   archiveSession: (payload: ArchiveSessionPayload) => void;
+  deleteSession: (payload: DeleteSessionPayload) => void;
   resumeSession: (payload: ResumeSessionPayload) => ResumeSessionResult;
   reloadSession: (payload: ReloadSessionPayload) => ResumeSessionResult;
   forkSession: (payload: ForkSessionPayload) => ResumeSessionResult;

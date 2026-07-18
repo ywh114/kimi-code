@@ -2848,14 +2848,9 @@ export class KimiTUI {
     });
   }
 
-  private async toggleSessionPickerScope(selectedSessionId: string): Promise<void> {
-    const requestToken = ++this.sessionPickerScopeRequestToken;
-    const nextScope = this.state.sessionsScope === 'cwd' ? 'all' : 'cwd';
-    await this.fetchSessions(nextScope);
-    if (requestToken !== this.sessionPickerScopeRequestToken) return;
-    if (this.state.activeDialog !== 'session-picker') return;
+  private remountSessionPickerAfterFetch(initialSelectedSessionId: string | undefined): void {
     this.mountSessionPicker({
-      initialSelectedSessionId: selectedSessionId,
+      initialSelectedSessionId,
       applyStartupModes: this.sessionPickerOptions.applyStartupModes,
       onCancel: () => {
         this.hideSessionPicker();
@@ -2872,6 +2867,34 @@ export class KimiTUI {
           }
         : undefined,
     });
+  }
+
+  private async toggleSessionPickerScope(selectedSessionId: string): Promise<void> {
+    const requestToken = ++this.sessionPickerScopeRequestToken;
+    const nextScope = this.state.sessionsScope === 'cwd' ? 'all' : 'cwd';
+    await this.fetchSessions(nextScope);
+    if (requestToken !== this.sessionPickerScopeRequestToken) return;
+    if (this.state.activeDialog !== 'session-picker') return;
+    this.remountSessionPickerAfterFetch(selectedSessionId);
+  }
+
+  private async deleteSessionFromPicker(session: SessionRow): Promise<void> {
+    const requestToken = ++this.sessionPickerScopeRequestToken;
+    const sessionsBeforeDelete = this.state.sessions;
+    try {
+      await this.harness.deleteSession({ sessionId: session.id });
+    } catch (error) {
+      this.showError(`Failed to delete session: ${formatErrorMessage(error)}`);
+    }
+    await this.fetchSessions(this.state.sessionsScope);
+    if (requestToken !== this.sessionPickerScopeRequestToken) return;
+    if (this.state.activeDialog !== 'session-picker') return;
+    // Keep the selection where the user was: the session after the deleted
+    // one, falling back to the one before it.
+    const deletedIndex = sessionsBeforeDelete.findIndex((entry) => entry.id === session.id);
+    const neighbor =
+      sessionsBeforeDelete[deletedIndex + 1] ?? sessionsBeforeDelete[deletedIndex - 1];
+    this.remountSessionPickerAfterFetch(neighbor?.id);
   }
 
   hideSessionPicker(): void {
@@ -2916,6 +2939,9 @@ export class KimiTUI {
         onCtrlD: options.onCtrlD,
         onToggleScope: (selectedSessionId: string) => {
           void this.toggleSessionPickerScope(selectedSessionId);
+        },
+        onDelete: (session: SessionRow) => {
+          void this.deleteSessionFromPicker(session);
         },
       }),
     );

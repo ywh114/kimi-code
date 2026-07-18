@@ -9,7 +9,7 @@ import {
 
 import { Session } from '#/session';
 import type { KimiAuthFacade } from '#/auth';
-import type { SDKRpcClientBase } from '#/rpc';
+import type { SDKRpcClientBase, SessionIdRpcInput } from '#/rpc';
 import type {
   ConfigDiagnostics,
   CreateSessionOptions,
@@ -234,6 +234,10 @@ export class KimiHarness {
 
   async listSessions(options: ListSessionsOptions = {}): Promise<readonly SessionSummary[]> {
     return this.rpc.listSessions(options);
+  }
+
+  async deleteSession(input: SessionIdRpcInput): Promise<void> {
+    return this.rpc.deleteSession(input);
   }
 
   async getConfig(options: GetConfigOptions = {}): Promise<KimiConfig> {
