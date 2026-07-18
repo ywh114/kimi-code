@@ -92,7 +92,6 @@ import type {
   CoreInfo,
   CreateGoalPayload,
   CreateSessionPayload,
-  DeleteSessionPayload,
   DetachBackgroundPayload,
   ClientTelemetryInfo,
   EmptyPayload,
