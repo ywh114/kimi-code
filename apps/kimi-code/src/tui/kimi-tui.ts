@@ -2893,7 +2893,7 @@ export class KimiTUI {
     const requestToken = ++this.sessionPickerScopeRequestToken;
     const sessionsBeforeDelete = this.state.sessions;
     try {
-      await this.harness.deleteSession({ sessionId: session.id });
+      await this.harness.deleteSession(session.id);
     } catch (error) {
       this.showError(`Failed to delete session: ${formatErrorMessage(error)}`);
     }
