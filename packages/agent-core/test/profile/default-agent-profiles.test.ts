@@ -45,7 +45,7 @@ describe('default agent profiles', () => {
     expect(agentTools).toEqual(
       expect.arrayContaining(['CreateGoal', 'GetGoal', 'SetGoalBudget', 'UpdateGoal']),
     );
-    for (const name of ['coder', 'explore', 'plan']) {
+    for (const name of ['coder', 'explore', 'plan', 'critic', 'brainstorm']) {
       const tools = DEFAULT_AGENT_PROFILES[name]?.tools ?? [];
       expect(tools).not.toContain('CreateGoal');
       expect(tools).not.toContain('GetGoal');
@@ -72,9 +72,9 @@ describe('default agent profiles', () => {
       expect(prompt).toContain('- test-skill: does things');
     }
 
-    // explore/plan lack the Skill tool, so neither the section heading nor the
-    // skill listing should appear in their prompts.
-    for (const name of ['explore', 'plan']) {
+    // explore/plan/critic/brainstorm lack the Skill tool, so neither the
+    // section heading nor the skill listing should appear in their prompts.
+    for (const name of ['explore', 'plan', 'critic', 'brainstorm']) {
       const tools = DEFAULT_AGENT_PROFILES[name]?.tools ?? [];
       expect(tools).not.toContain('Skill');
       const prompt = DEFAULT_AGENT_PROFILES[name]?.systemPrompt(promptContext) ?? '';
@@ -90,7 +90,7 @@ describe('default agent profiles', () => {
     // {% if %} reconstruction of availability). This holds for the root `agent` too, not
     // just subagents. The cross-tool secret-file guard — built on the always-present
     // Read/Grep/Glob — stays shared.
-    for (const name of ['agent', 'coder', 'explore', 'plan']) {
+    for (const name of ['agent', 'coder', 'explore', 'plan', 'critic', 'brainstorm']) {
       const prompt = DEFAULT_AGENT_PROFILES[name]?.systemPrompt(promptContext) ?? '';
       expect(prompt).not.toContain('Launch multiple explore agents concurrently'); // Agent → agent.md + explore whenToUse
       expect(prompt).not.toContain('long-running shell commands as background tasks'); // background → bash.md
@@ -111,7 +111,7 @@ describe('default agent profiles', () => {
   it('renders blast-radius and concrete-example guidance for root and subagents alike', () => {
     // These additions live in shared, ungated sections, so the root agent AND every
     // subagent that renders the coding guidelines must carry them verbatim.
-    for (const name of ['agent', 'coder', 'explore', 'plan']) {
+    for (const name of ['agent', 'coder', 'explore', 'plan', 'critic', 'brainstorm']) {
       const prompt = DEFAULT_AGENT_PROFILES[name]?.systemPrompt(promptContext) ?? '';
       // Reversibility / blast-radius principle generalized beyond the git rule.
       expect(prompt).toContain('reversibility and blast radius');

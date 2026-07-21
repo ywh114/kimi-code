@@ -402,6 +402,15 @@ function kimiUserAgentHeader(
 }
 
 function providerApiKey(provider: ProviderConfig): string | undefined {
+  return configuredProviderApiKey(provider) ?? processEnvApiKey(provider.apiKeyEnv);
+}
+
+function processEnvApiKey(envVarName: string | undefined): string | undefined {
+  if (envVarName === undefined) return undefined;
+  return nonEmptyString(process.env[envVarName]);
+}
+
+function configuredProviderApiKey(provider: ProviderConfig): string | undefined {
   switch (provider.type) {
     case 'anthropic':
       return providerValue(provider.apiKey, provider.env, 'ANTHROPIC_API_KEY');
