@@ -102,6 +102,37 @@ export interface ToolCallSubagentSnapshot {
   readonly latestActivity: string | undefined;
 }
 
+/** One sub-tool call inside a subagent detail view. */
+export interface ToolCallSubagentDetailCall {
+  readonly name: string;
+  readonly args: Record<string, unknown>;
+  readonly phase: 'ongoing' | 'done';
+  readonly output?: string | undefined;
+  readonly isError?: boolean;
+}
+
+/**
+ * Full subagent state for the detail panel (Ctrl+↓). Unlike the group
+ * snapshot, this carries the complete accumulated text, thinking, and
+ * sub-tool-call list. Backed by the same live fields, so polling it returns
+ * current data for running agents and final data for done ones (including
+ * replayed sessions).
+ */
+export interface ToolCallSubagentDetail {
+  readonly toolCallId: string;
+  readonly agentName: string | undefined;
+  readonly description: string;
+  readonly phase: ToolCallSubagentSnapshot['phase'];
+  readonly thinkingText: string;
+  readonly text: string;
+  readonly subCalls: readonly ToolCallSubagentDetailCall[];
+  /** Older finished sub-calls trimmed from the live window (not recoverable). */
+  readonly hiddenSubCallCount: number;
+  readonly resultSummary: string | undefined;
+  readonly errorText: string | undefined;
+  readonly tokens: number;
+}
+
 /**
  * Immutable Read tool state snapshot. `ReadGroupComponent` reads one-time
  * views via `ToolCallComponent.getReadSnapshot()` and sums lines for the group
@@ -905,6 +936,48 @@ export class ToolCallComponent extends Container {
       isError: derivedPhase === 'failed',
       errorText,
       latestActivity,
+    };
+  }
+
+  /**
+   * Full detail view of this card's subagent, or `undefined` when this card
+   * does not represent an Agent/subagent run. Used by the subagent detail
+   * panel (Ctrl+↓). Re-polled by the panel while open, so it must stay cheap
+   * and side-effect free.
+   */
+  getSubagentDetail(): ToolCallSubagentDetail | undefined {
+    const isAgentCard =
+      this.toolCall.name === 'Agent' ||
+      this.subagentAgentId !== undefined ||
+      this.toolCall.subagent !== undefined;
+    if (!isAgentCard) return undefined;
+    const snap = this.getSubagentSnapshot();
+    const subCalls: ToolCallSubagentDetailCall[] = [
+      ...this.finishedSubCalls.map((c) => ({
+        name: c.name,
+        args: c.args,
+        phase: 'done' as const,
+        output: c.output,
+        isError: c.isError,
+      })),
+      ...[...this.ongoingSubCalls.values()].map((c) => ({
+        name: c.name,
+        args: c.args,
+        phase: 'ongoing' as const,
+      })),
+    ];
+    return {
+      toolCallId: this.toolCall.id,
+      agentName: this.subagentAgentName,
+      description: str(this.toolCall.args['description']) || str(this.toolCall.description),
+      phase: snap.phase,
+      thinkingText: this.subagentThinkingText,
+      text: this.subagentText,
+      subCalls,
+      hiddenSubCallCount: this.hiddenSubCallCount,
+      resultSummary: this.subagentResultSummary,
+      errorText: snap.errorText,
+      tokens: snap.tokens,
     };
   }
 

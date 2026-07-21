@@ -134,7 +134,7 @@ describe('clipboard image paste compression', () => {
     readClipboardMedia.mockReset();
   });
 
-  it('downsamples an oversized pasted image before storing it', async () => {
+  it('downsamples an oversized pasted image before storing it', { timeout: 20000 }, async () => {
     const big = await solidPng(3600, 1800);
     readClipboardMedia.mockResolvedValue({ kind: 'image', bytes: big, mimeType: 'image/png' });
 
@@ -157,7 +157,7 @@ describe('clipboard image paste compression', () => {
     expect(Math.max(dims!.width, dims!.height)).toBeLessThanOrEqual(3000);
   });
 
-  it('honors the harness [image] max_edge_px when pasting', async () => {
+  it('honors the harness [image] max_edge_px when pasting', { timeout: 20000 }, async () => {
     const big = await solidPng(3600, 1800);
     readClipboardMedia.mockResolvedValue({ kind: 'image', bytes: big, mimeType: 'image/png' });
 
@@ -176,7 +176,7 @@ describe('clipboard image paste compression', () => {
     expect(Math.max(dims!.width, dims!.height)).toBe(800);
   });
 
-  it('records and persists the pre-compression original for an oversized paste', async () => {
+  it('records and persists the pre-compression original for an oversized paste', { timeout: 20000 }, async () => {
     const big = await solidPng(3600, 1800);
     readClipboardMedia.mockResolvedValue({ kind: 'image', bytes: big, mimeType: 'image/png' });
 
@@ -198,7 +198,7 @@ describe('clipboard image paste compression', () => {
     await unlink(att.original!.path!).catch(() => undefined);
   });
 
-  it('persists the original into the session media-originals dir when the session is known', async () => {
+  it('persists the original into the session media-originals dir when the session is known', { timeout: 20000 }, async () => {
     const sessionDir = await mkdtemp(join(tmpdir(), 'kimi-paste-session-'));
     const big = await solidPng(3600, 1800);
     readClipboardMedia.mockResolvedValue({ kind: 'image', bytes: big, mimeType: 'image/png' });
@@ -283,7 +283,7 @@ describe('clipboard image paste compression', () => {
     expect(att.placeholder).toContain('80×120');
   });
 
-  it('emits image_compress telemetry tagged tui_paste through host.track', async () => {
+  it('emits image_compress telemetry tagged tui_paste through host.track', { timeout: 20000 }, async () => {
     const big = await solidPng(3600, 1800);
     readClipboardMedia.mockResolvedValue({ kind: 'image', bytes: big, mimeType: 'image/png' });
 

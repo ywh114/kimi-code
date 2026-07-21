@@ -46,6 +46,12 @@ import {
   resolveCompletionBudget,
 } from '../../utils/completion-budget';import { renderPrompt } from '../../utils/render-prompt';
 import compactionInstructionTemplate from './compaction-instruction.md?raw';
+import {
+  appendTrackedFilesBlock,
+  collectTrackedFilesFromHistory,
+  extractToolCallFileOps,
+  mergeTrackedFiles,
+} from './file-tracking';
 import type { CompactionBeginData, CompactionResult } from './types';
 import {
   DEFAULT_COMPACTION_CONFIG,
@@ -602,7 +608,14 @@ export class FullCompaction {
         return undefined;
       }
 
-      const rawSummary = this.postProcessSummary(summary ?? '');
+      const trackedFiles = mergeTrackedFiles(
+        collectTrackedFilesFromHistory(originalHistory),
+        extractToolCallFileOps(originalHistory),
+      );
+      const rawSummary = appendTrackedFilesBlock(
+        this.postProcessSummary(summary ?? ''),
+        trackedFiles,
+      );
       const contextSummary = buildCompactionSummaryText(rawSummary);
       const result = this.agent.context.applyCompaction({
         summary: rawSummary,

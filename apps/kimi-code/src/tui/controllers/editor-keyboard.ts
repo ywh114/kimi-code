@@ -20,6 +20,7 @@ import type { PendingExit, QueuedMessage, SteerInputItem } from '../types';
 import type { TUIState } from '../tui-state';
 import type { BtwPanelController } from './btw-panel';
 import type { ShellEvalPanelController } from './shell-eval-panel';
+import type { SubagentDetailController } from './subagent-detail';
 
 export interface EditorKeyboardHost {
   state: TUIState;
@@ -35,6 +36,7 @@ export interface EditorKeyboardHost {
   handleUserInput(text: string): void;
   readonly btwPanelController: BtwPanelController;
   readonly shellEvalPanelController: ShellEvalPanelController;
+  readonly subagentDetailController: SubagentDetailController;
   steerMessage(session: Session, input: readonly SteerInputItem[]): void;
   validateMediaCapabilities(extraction: {
     hasMedia: boolean;
@@ -150,6 +152,10 @@ export class EditorKeyboardController {
         this.clearPendingExit();
         return;
       }
+      if (host.subagentDetailController.close()) {
+        this.clearPendingExit();
+        return;
+      }
 
       if (host.state.appState.isCompacting) {
         this.clearPendingExit();
@@ -203,12 +209,11 @@ export class EditorKeyboardController {
         this.clearPendingUndoEsc();
         return;
       }
-      if (host.state.appState.isCompacting) {
-        this.cancelCurrentCompaction();
+      if (host.shellEvalPanelController.closeOrCancel()) {
         this.clearPendingUndoEsc();
         return;
       }
-      if (host.shellEvalPanelController.closeOrCancel()) {
+      if (host.subagentDetailController.close()) {
         this.clearPendingUndoEsc();
         return;
       }
@@ -359,6 +364,7 @@ export class EditorKeyboardController {
     editor.onUpArrowEmpty = () => {
       if (host.btwPanelController.scroll('up')) return true;
       if (host.shellEvalPanelController.scroll('up')) return true;
+      if (host.subagentDetailController.scroll('up')) return true;
       if (host.state.appState.streamingPhase === 'idle' && !host.state.appState.isCompacting) return false;
       const recalled = host.recallLastQueued();
       if (recalled !== undefined) {
@@ -377,7 +383,15 @@ export class EditorKeyboardController {
     };
 
     editor.onDownArrowEmpty = () =>
-      host.btwPanelController.scroll('down') || host.shellEvalPanelController.scroll('down');
+      host.btwPanelController.scroll('down') ||
+      host.shellEvalPanelController.scroll('down') ||
+      host.subagentDetailController.scroll('down');
+
+    editor.onSubagentDetail = (direction) => {
+      host.subagentDetailController.open(direction);
+    };
+
+    editor.onSubagentCycle = (direction) => host.subagentDetailController.cycle(direction);
 
     editor.onPasteImage = async () => this.handleClipboardImagePaste();
   }

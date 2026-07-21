@@ -87,7 +87,7 @@ describe('handleContextMaxCommand', () => {
     await handleContextMaxCommand(host, '');
     expect(showStatus).toHaveBeenCalledOnce();
     const [msg] = showStatus.mock.calls[0] as [string];
-    expect(msg).toContain('1.0M');
+    expect(msg).toContain('1M');
     expect(msg).toContain('/context-max <tokens|reset>');
   });
 
@@ -140,7 +140,7 @@ describe('handleContextMaxCommand', () => {
       contextUsage: 12_000 / 256_000,
     });
     const [msg, color] = showStatus.mock.calls[0] as [string, string];
-    expect(msg).toContain('256.0k');
+    expect(msg).toContain('250k');
     expect(color).toBe('success');
   });
 
@@ -181,7 +181,7 @@ describe('handleContextMaxCommand', () => {
       },
     });
     const [msg] = showStatus.mock.calls[0] as [string];
-    expect(msg).toContain('1.0M');
+    expect(msg).toContain('1M');
   });
 
   it('still persists when there is no active session', async () => {
@@ -189,6 +189,6 @@ describe('handleContextMaxCommand', () => {
     await handleContextMaxCommand(host, '256k');
     expect(setConfig).toHaveBeenCalledOnce();
     expect(getStatus).not.toHaveBeenCalled();
-    expect(showStatus).toHaveBeenCalledWith(expect.stringContaining('256.0k'), 'success');
+    expect(showStatus).toHaveBeenCalledWith(expect.stringContaining('250k'), 'success');
   });
 });

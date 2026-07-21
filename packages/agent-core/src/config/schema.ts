@@ -27,6 +27,13 @@ const StringRecordSchema = z.record(z.string(), z.string());
 export const ProviderConfigSchema = z.object({
   type: ProviderTypeSchema,
   apiKey: z.string().optional(),
+  /**
+   * Name of a shell environment variable holding the API key. Opt-in escape
+   * hatch for users who do not want keys in config.toml: consulted last, after
+   * `apiKey` and the `[providers.<name>.env]` sub-table. The env var NAME is
+   * what gets persisted, never its value.
+   */
+  apiKeyEnv: z.string().optional(),
   baseUrl: z.string().optional(),
   defaultModel: z.string().optional(),
   oauth: OAuthRefSchema.optional(),

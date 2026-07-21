@@ -39,6 +39,7 @@ export const DEFAULT_KEYBOARD_SHORTCUTS: readonly KeyboardShortcut[] = [
   { keys: 'Ctrl-S', description: 'Steer — inject a follow-up during streaming' },
   { keys: 'Ctrl-X', description: 'Toggle shell input mode' },
   { keys: 'Ctrl-R', description: 'Reverse-i-search input history' },
+  { keys: 'Ctrl-↓ / Ctrl-↑', description: 'Open subagent detail / navigate agents (← → cycle, ↑ ↓ scroll)' },
   { keys: 'Shift-Enter / Ctrl-J', description: 'Insert newline' },
   { keys: 'Ctrl-C', description: 'Interrupt stream / clear input' },
   { keys: 'Ctrl-D', description: 'Exit (on empty input)' },

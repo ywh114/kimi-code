@@ -35,6 +35,7 @@ export interface TUIState {
   queueContainer: Container;
   btwPanelContainer: Container;
   shellEvalPanelContainer: Container;
+  subagentPanelContainer: Container;
   editorContainer: Container;
   footer: FooterComponent;
   editor: CustomEditor;
@@ -77,6 +78,7 @@ export function createTUIState(options: KimiTUIOptions): TUIState {
   const queueContainer = new GutterContainer(CHROME_GUTTER, CHROME_GUTTER);
   const btwPanelContainer = new GutterContainer(CHROME_GUTTER, CHROME_GUTTER);
   const shellEvalPanelContainer = new GutterContainer(CHROME_GUTTER, CHROME_GUTTER);
+  const subagentPanelContainer = new GutterContainer(CHROME_GUTTER, CHROME_GUTTER);
   const editorContainer = new GutterContainer(CHROME_GUTTER, CHROME_GUTTER);
   const editor = new CustomEditor(ui, {
     disablePasteBurst: initialAppState.disablePasteBurst ?? DEFAULT_TUI_CONFIG.disablePasteBurst,
@@ -95,6 +97,7 @@ export function createTUIState(options: KimiTUIOptions): TUIState {
     queueContainer,
     btwPanelContainer,
     shellEvalPanelContainer,
+    subagentPanelContainer,
     editorContainer,
     editor,
     footer,

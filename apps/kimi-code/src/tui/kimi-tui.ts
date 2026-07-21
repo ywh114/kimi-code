@@ -105,6 +105,7 @@ import { AuthFlowController } from './controllers/auth-flow';
 import { BtwPanelController } from './controllers/btw-panel';
 import { ClipboardImageHintController } from './controllers/clipboard-image-hint';
 import { ShellEvalPanelController } from './controllers/shell-eval-panel';
+import { SubagentDetailController } from './controllers/subagent-detail';
 import { EditorKeyboardController } from './controllers/editor-keyboard';
 import { SessionEventHandler } from './controllers/session-event-handler';
 import { SessionReplayRenderer } from './controllers/session-replay';
@@ -314,6 +315,14 @@ export class KimiTUI {
   private uninstallRainbowDance: () => void;
   private signalCleanupHandlers: Array<() => void> = [];
   private suspendInputDisposer: (() => void) | undefined;
+  /**
+   * No-op interval held across suspend/resume. After `ui.stop()` tears down
+   * stdin/render/tracking handles, an idle app can have zero event-loop
+   * handles left; Node would then exit (code 0) in the window before the
+   * self-SIGSTOP takes effect, dying instead of suspending. Keeping one
+   * handle alive guarantees the process survives until it actually stops.
+   */
+  private suspendKeepAlive: ReturnType<typeof setInterval> | undefined;
   private isShuttingDown = false;
   private readonly migrationPlan: MigrationPlan | null;
   private readonly migrateOnly: boolean;
@@ -332,6 +341,7 @@ export class KimiTUI {
   readonly authFlow: AuthFlowController;
   readonly btwPanelController: BtwPanelController;
   readonly shellEvalPanelController: ShellEvalPanelController;
+  readonly subagentDetailController: SubagentDetailController;
   readonly sessionEventHandler: SessionEventHandler;
   readonly sessionReplay: SessionReplayRenderer;
   readonly tasksBrowserController: TasksBrowserController;
@@ -413,6 +423,7 @@ export class KimiTUI {
     this.authFlow = new AuthFlowController(this);
     this.btwPanelController = new BtwPanelController(this);
     this.shellEvalPanelController = new ShellEvalPanelController(this);
+    this.subagentDetailController = new SubagentDetailController(this);
     this.sessionEventHandler = new SessionEventHandler(this);
     this.sessionReplay = new SessionReplayRenderer(this);
     this.tasksBrowserController = new TasksBrowserController(this);
@@ -829,6 +840,10 @@ export class KimiTUI {
   async stop(exitCode?: number): Promise<void> {
     if (this.isShuttingDown) return;
     this.isShuttingDown = true;
+    if (this.suspendKeepAlive !== undefined) {
+      clearInterval(this.suspendKeepAlive);
+      this.suspendKeepAlive = undefined;
+    }
     this.suspendInputDisposer?.();
     this.unregisterSignalHandlers();
     this.aborted = true;
@@ -839,6 +854,7 @@ export class KimiTUI {
     this.tasksBrowserController.close();
     this.btwPanelController.clear();
     this.shellEvalPanelController.clear();
+    this.subagentDetailController.clear();
     this.stopActivitySpinner();
     this.streamingUI.disposeActiveCompactionBlock();
     this.streamingUI.resetToolUi();
@@ -911,6 +927,9 @@ export class KimiTUI {
     if (process.platform !== 'win32') {
       const suspendHandler = (): void => {
         if (this.isShuttingDown) return;
+        // Arm the keep-alive BEFORE tearing the UI down: the event loop must
+        // never be empty between ui.stop() and the SIGSTOP landing.
+        this.suspendKeepAlive ??= setInterval(() => {}, 60_000);
         this.disposeTerminalTracking();
         this.state.ui.stop();
         // Raise SIGSTOP (cannot be caught) so the process actually suspends.
@@ -926,6 +945,10 @@ export class KimiTUI {
         this.startEventLoop();
         this.state.ui.setFocus(this.state.editor);
         this.state.ui.requestRender(true);
+        if (this.suspendKeepAlive !== undefined) {
+          clearInterval(this.suspendKeepAlive);
+          this.suspendKeepAlive = undefined;
+        }
       };
       process.prependListener('SIGCONT', continueHandler);
       this.signalCleanupHandlers.push(() => {
@@ -992,6 +1015,7 @@ export class KimiTUI {
     ui.addChild(this.state.queueContainer);
     ui.addChild(this.state.btwPanelContainer);
     ui.addChild(this.state.shellEvalPanelContainer);
+    ui.addChild(this.state.subagentPanelContainer);
     ui.addChild(this.state.editorContainer);
     // Footer is mounted later (mountFooter), not here.
   }
@@ -1756,6 +1780,7 @@ export class KimiTUI {
     this.tasksBrowserController.close();
     this.btwPanelController.clear();
     this.shellEvalPanelController.clear();
+    this.subagentDetailController.clear();
     this.state.footer.setBackgroundCounts({ bashTasks: 0, agentTasks: 0 });
     this.streamingUI.setTodoList([]);
     this.streamingUI.setTurnId(undefined);
@@ -2093,6 +2118,7 @@ export class KimiTUI {
     this.state.transcriptContainer.clear();
     this.btwPanelController.clear();
     this.shellEvalPanelController.clear();
+    this.subagentDetailController.clear();
     this.clearTerminalInlineImages();
     this.state.todoPanel.clear();
     this.state.todoPanelContainer.clear();
@@ -2571,10 +2597,16 @@ export class KimiTUI {
           ? boundaries[boundaries.length - TRANSCRIPT_EXPAND_TURNS]!
           : 0;
 
+    const thinkingLocked = this.streamingUI.isThinkingExpandedLocked();
     for (let i = 0; i < children.length; i++) {
       const child = children[i]!;
       if (!isExpandable(child)) continue;
-      child.setExpanded(this.state.toolOutputExpanded && i >= expandCutoff);
+      const expanded = this.state.toolOutputExpanded && i >= expandCutoff;
+      // The Ctrl+Y live-thinking lock is independent of Ctrl+O: toggling tool
+      // output expansion must not collapse thinking the user locked open.
+      child.setExpanded(
+        child instanceof ThinkingComponent ? expanded || thinkingLocked : expanded,
+      );
     }
     this.setAppState({ toolOutputExpanded: this.state.toolOutputExpanded });
     // Expanding/collapsing shifts content above the viewport; the clamped

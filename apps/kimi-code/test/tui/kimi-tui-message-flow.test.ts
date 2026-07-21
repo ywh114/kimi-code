@@ -106,6 +106,8 @@ interface MessageDriver {
   persistInputHistory(text: string): Promise<void>;
   sendQueuedMessage(session: unknown, item: QueuedMessage): void;
   getCurrentSessionId(): string;
+  toggleToolOutputExpansion(): void;
+  toggleThinkingExpansion(): void;
 }
 
 interface FeedbackDriver extends MessageDriver {
@@ -2745,9 +2747,10 @@ command = "vim"
     const transcript = stripSgr(renderTranscript(driver));
     const panel = stripSgr(renderBtwPanel(driver));
     const rootChildren = driver.state.ui.children;
-    // The shell-eval panel container sits between the /btw panel and the editor.
+    // The shell-eval and subagent detail panel containers sit between the /btw
+    // panel and the editor.
     expect(rootChildren.indexOf(driver.state.btwPanelContainer)).toBe(
-      rootChildren.indexOf(driver.state.editorContainer) - 2,
+      rootChildren.indexOf(driver.state.editorContainer) - 3,
     );
     expect(transcript).toContain('main answer after btw');
     expect(transcript).not.toContain('side answer');
@@ -5523,9 +5526,41 @@ command = "vim"
     expect(transcript).not.toContain('ctrl+o expand');
   });
 
+  it('keeps ctrl+y locked thinking expanded when ctrl+o is toggled off', async () => {
+    const { driver } = await makeDriver();
+
+    const longThinking = ['t1', 't2', 't3', 't4', 't5', 't6', 't7'].join('\n');
+    driver.sessionEventHandler.handleEvent(
+      {
+        type: 'thinking.delta',
+        agentId: 'main',
+        sessionId: 'ses-1',
+        delta: longThinking,
+      } as Event,
+      vi.fn(),
+    );
+    driver.streamingUI.flushNow();
+
+    driver.toggleThinkingExpansion();
+    expect(driver.streamingUI.isThinkingExpandedLocked()).toBe(true);
+
+    driver.toggleToolOutputExpansion();
+    driver.toggleToolOutputExpansion();
+    expect(driver.state.toolOutputExpanded).toBe(false);
+
+    // The c-y lock must survive the c-o toggle: the full thinking (including
+    // its first line) stays visible instead of collapsing to the preview tail.
+    const transcript = stripSgr(renderTranscript(driver));
+    expect(transcript).toContain('t1');
+    expect(transcript).toContain('t7');
+  });
+
   it('finalizes live thinking when a tool call starts', async () => {
-    const { driver, session } = await makeDriver();
-    session.runShellCommand = vi.fn(async () => ({ stdout: '', stderr: '', isError: false }));
+    const { driver } = await makeDriver(
+      makeSession({
+        runShellCommand: vi.fn(async () => ({ stdout: '', stderr: '', isError: false })),
+      }),
+    );
 
     driver.sessionEventHandler.handleEvent(
       {

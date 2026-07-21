@@ -45,6 +45,7 @@ function createHarness(options: { streamingPhase?: string; isCompacting?: boolea
     session,
     btwPanelController: { cancelRunning: btwCancelRunning, closeOrCancel: btwCloseOrCancel },
     shellEvalPanelController: { closeOrCancel: vi.fn(() => false), cancelRunning: vi.fn(() => false), scroll: vi.fn(() => false) },
+    subagentDetailController: { close: vi.fn(() => false), scroll: vi.fn(() => false), cycle: vi.fn(() => false), open: vi.fn() },
     openUndoSelector,
     cancelRunningShellCommand,
   } as unknown as EditorKeyboardHost;
@@ -157,7 +158,7 @@ describe('EditorKeyboardController btw panel priority', () => {
     expect(cancelCompaction).not.toHaveBeenCalled();
   });
 
-  it('Esc cancels compaction on the next press once the btw panel is gone', () => {
+  it('Esc ignores compaction on the next press once the btw panel is gone', () => {
     const { editor, btwCloseOrCancel, cancelCompaction } = createHarness({ isCompacting: true });
     btwCloseOrCancel.mockReturnValueOnce(true);
 
@@ -165,16 +166,16 @@ describe('EditorKeyboardController btw panel priority', () => {
     expect(cancelCompaction).not.toHaveBeenCalled();
 
     pressEscape(editor);
-    expect(cancelCompaction).toHaveBeenCalledOnce();
+    expect(cancelCompaction).not.toHaveBeenCalled();
   });
 
-  it('Esc cancels compaction directly when no btw panel is open', () => {
+  it('Esc does not cancel compaction even when no btw panel is open', () => {
     const { editor, btwCloseOrCancel, cancelCompaction } = createHarness({ isCompacting: true });
 
     pressEscape(editor);
 
     expect(btwCloseOrCancel).toHaveBeenCalledOnce();
-    expect(cancelCompaction).toHaveBeenCalledOnce();
+    expect(cancelCompaction).not.toHaveBeenCalled();
   });
 
   it('Ctrl+C cancels a running btw question first while compacting', () => {

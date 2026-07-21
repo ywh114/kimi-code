@@ -10,6 +10,7 @@ function makeHost() {
   const streamingUI = {
     setTurnId: vi.fn(),
     flushNow: vi.fn(),
+    hasThinkingDraft: vi.fn(() => false),
     resetToolUi: vi.fn(),
     setStep: vi.fn(),
     finalizeTurn: vi.fn(),

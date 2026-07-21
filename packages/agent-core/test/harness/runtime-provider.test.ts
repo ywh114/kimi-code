@@ -226,6 +226,99 @@ describe('resolveRuntimeProvider model metadata', () => {
   });
 });
 
+describe('resolveRuntimeProvider apiKeyEnv', () => {
+  const ENV_VAR = 'KIMI_TEST_API_KEY_ENV_VAR';
+
+  function withEnv<T>(value: string | undefined, fn: () => T): T {
+    const saved = process.env[ENV_VAR];
+    if (value === undefined) delete process.env[ENV_VAR];
+    else process.env[ENV_VAR] = value;
+    try {
+      return fn();
+    } finally {
+      if (saved === undefined) delete process.env[ENV_VAR];
+      else process.env[ENV_VAR] = saved;
+    }
+  }
+
+  function configWithProvider(provider: Record<string, unknown>): KimiConfig {
+    return {
+      ...BASE_CONFIG,
+      providers: {
+        ...BASE_CONFIG.providers,
+        deepseek: provider,
+      },
+      models: {
+        ...BASE_CONFIG.models!,
+        'deepseek-v4-pro': {
+          provider: 'deepseek',
+          model: 'deepseek-v4-pro',
+          maxContextSize: 131072,
+          capabilities: ['thinking', 'tool_use'],
+        },
+      },
+    } as unknown as KimiConfig;
+  }
+
+  it('reads the API key from the shell env var named by api_key_env', () => {
+    withEnv('sk-from-shell-env', () => {
+      const resolved = resolveRuntimeProvider({
+        config: configWithProvider({
+          type: 'openai',
+          baseUrl: 'https://api.deepseek.com/v1',
+          apiKeyEnv: ENV_VAR,
+        }),
+        model: 'deepseek-v4-pro',
+      });
+
+      expect(resolved.provider).toMatchObject({
+        type: 'openai',
+        model: 'deepseek-v4-pro',
+        baseUrl: 'https://api.deepseek.com/v1',
+        apiKey: 'sk-from-shell-env',
+      });
+    });
+  });
+
+  it('keeps apiKey and the env sub-table ahead of apiKeyEnv', () => {
+    withEnv('sk-from-shell-env', () => {
+      const viaDirectField = resolveRuntimeProvider({
+        config: configWithProvider({
+          type: 'openai',
+          apiKey: 'sk-direct',
+          apiKeyEnv: ENV_VAR,
+        }),
+        model: 'deepseek-v4-pro',
+      });
+      expect(viaDirectField.provider).toMatchObject({ apiKey: 'sk-direct' });
+
+      const viaEnvSubTable = resolveRuntimeProvider({
+        config: configWithProvider({
+          type: 'openai',
+          env: { OPENAI_API_KEY: 'sk-sub-table' },
+          apiKeyEnv: ENV_VAR,
+        }),
+        model: 'deepseek-v4-pro',
+      });
+      expect(viaEnvSubTable.provider).toMatchObject({ apiKey: 'sk-sub-table' });
+    });
+  });
+
+  it('leaves apiKey undefined when apiKeyEnv names an unset variable', () => {
+    withEnv(undefined, () => {
+      const resolved = resolveRuntimeProvider({
+        config: configWithProvider({
+          type: 'openai',
+          apiKeyEnv: ENV_VAR,
+        }),
+        model: 'deepseek-v4-pro',
+      });
+
+      expect((resolved.provider as { apiKey?: string }).apiKey).toBeUndefined();
+    });
+  });
+});
+
 describe('resolveRuntimeProvider maxOutputSize forwarding', () => {
   it('returns alias.maxOutputSize for request completion budgeting', () => {
     const resolved = resolveRuntimeProvider({

@@ -3,13 +3,19 @@ import Ajv2019 from 'ajv/dist/2019';
 import Ajv2020 from 'ajv/dist/2020';
 import addFormats from 'ajv-formats';
 
-const DRAFT_07_AJV = new Ajv({ strict: false, allErrors: true });
+// coerceTypes: some models (e.g. Qwen previews) emit numeric tool arguments as
+// JSON strings ("255" instead of 255). Ajv coerces those to the schema's
+// declared type in place — and because the validated object is the same
+// reference that flows into tool execution, the coerced value is what the tool
+// receives. Coercion only fires where the schema declares a non-string type, so
+// genuine string fields (paths, commands, …) are never touched.
+const DRAFT_07_AJV = new Ajv({ strict: false, allErrors: true, coerceTypes: true });
 addFormats(DRAFT_07_AJV);
 
-const DRAFT_2019_AJV = new Ajv2019({ strict: false, allErrors: true });
+const DRAFT_2019_AJV = new Ajv2019({ strict: false, allErrors: true, coerceTypes: true });
 addFormats(DRAFT_2019_AJV);
 
-const DRAFT_2020_AJV = new Ajv2020({ strict: false, allErrors: true });
+const DRAFT_2020_AJV = new Ajv2020({ strict: false, allErrors: true, coerceTypes: true });
 addFormats(DRAFT_2020_AJV);
 
 const DRAFT_2019_KEYWORDS = new Set([

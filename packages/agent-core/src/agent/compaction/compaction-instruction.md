@@ -58,6 +58,11 @@ live version. What that list cannot hold is the reasoning between tasks — why 
 was reordered or dropped, or a decision on one that constrains another — so
 record that instead.
 
+A previous summary may end with `<read-files>` / `<modified-files>` blocks.
+Those are machine-maintained and re-derived automatically after compaction, so
+do not transcribe or update them — mention a file in your prose only when the
+next turn actually needs to know about it.
+
 Be honest about uncertainty. If an earlier step claimed something was done but
 was never verified (tests "passing", a fix "working", a file "created"), say so
 plainly and treat it as unverified rather than fact — re-check before relying

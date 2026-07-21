@@ -28,6 +28,8 @@ const appState: AppState = {
   planMode: false,
   inputMode: 'prompt',
   swarmMode: false,
+  toolOutputExpanded: false,
+  thinkingExpandedLocked: false,
   theme: 'dark',
   editorCommand: null,
   notifications: { enabled: true, condition: 'unfocused' },

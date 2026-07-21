@@ -41,3 +41,7 @@ subagents:
     description: Fast codebase exploration with prompt-enforced read-only behavior.
   plan:
     description: Read-only implementation planning and architecture design.
+  critic:
+    description: Adversarial reviewer that critiques plans, designs, and code changes without editing; use for a second opinion before committing.
+  brainstorm:
+    description: Independent option generator for design and architecture problems; describe the problem and constraints, not your preferred approach, to avoid anchoring it.

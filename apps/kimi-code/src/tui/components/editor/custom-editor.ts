@@ -143,6 +143,10 @@ export class CustomEditor extends Editor {
    */
   public onUpArrowEmpty?: () => boolean;
   public onDownArrowEmpty?: () => boolean;
+  /** Ctrl+↓/↑: open the subagent detail panel or step between agent cards. */
+  public onSubagentDetail?: (direction: 1 | -1) => void;
+  /** ←/→ while the subagent detail panel is open; return true to consume the key. */
+  public onSubagentCycle?: (direction: 1 | -1) => boolean;
   public onShiftTab?: () => void;
   /** 'bash' when entering a `!` shell command. The leading `!` is never part
    *  of the text buffer — it is a separate mode + prompt symbol (see handleInput). */
@@ -610,6 +614,16 @@ export class CustomEditor extends Editor {
       return;
     }
 
+    if (matchesKey(normalized, Key.ctrl('down'))) {
+      this.onSubagentDetail?.(1);
+      return;
+    }
+
+    if (matchesKey(normalized, Key.ctrl('up'))) {
+      this.onSubagentDetail?.(-1);
+      return;
+    }
+
     if (matchesKey(normalized, Key.ctrl('d'))) {
       if (this.getText().length === 0) {
         this.onCtrlD?.();
@@ -687,6 +701,13 @@ export class CustomEditor extends Editor {
         if (this.onUpArrowEmpty()) return;
         // fall through to super so Editor's built-in history navigation runs
       }
+    }
+
+    // ←/→ cycles agents only while the subagent detail panel is open; the hook
+    // returns false when closed and cursor movement falls through to pi-tui.
+    if (matchesKey(normalized, Key.left) || matchesKey(normalized, Key.right)) {
+      const direction = matchesKey(normalized, Key.right) ? 1 : -1;
+      if (this.onSubagentCycle?.(direction) === true) return;
     }
 
     if (matchesKey(normalized, Key.down)) {
